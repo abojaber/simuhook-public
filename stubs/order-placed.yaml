@@ -1,0 +1,9 @@
+id: order-placed
+method: POST
+path: /webhooks/order
+headers:
+  X-Event: order.placed
+response:
+  status_code: 202
+  body: '{"acknowledged":true,"event":"order.placed"}'
+  delay: 500ms

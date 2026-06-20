@@ -1,0 +1,12 @@
+id: user-create
+method: POST
+path: /webhooks/user
+headers:
+  X-Event: user.created
+payload: '{"event":"user.created"}'
+response:
+  status_code: 201
+  body: '{"received":true,"event":"user.created"}'
+  headers:
+    X-Mock: "yes"
+  delay: 200ms

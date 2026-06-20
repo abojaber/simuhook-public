@@ -1,0 +1,6 @@
+id: health
+method: GET
+path: /health
+response:
+  status_code: 200
+  body: '{"status":"ok"}'

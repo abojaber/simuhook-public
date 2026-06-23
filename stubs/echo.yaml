@@ -1,0 +1,8 @@
+# Echo stub: returns the request body verbatim
+# Useful for debugging what your client is actually sending.
+id: echo
+method: POST
+path: /webhooks/echo
+response:
+  status_code: 200
+  echo: true

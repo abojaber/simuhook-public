@@ -23,6 +23,7 @@ type stubResponse struct {
 	Body       string            `yaml:"body,omitempty"`
 	Headers    map[string]string `yaml:"headers,omitempty"`
 	Delay      string            `yaml:"delay,omitempty"`
+	Echo       bool              `yaml:"echo,omitempty"`
 }
 
 func ParseStubFile(path string) (*Endpoint, error) {
@@ -52,6 +53,7 @@ func ParseStubFile(path string) (*Endpoint, error) {
 			StatusCode: s.Response.StatusCode,
 			Body:       []byte(s.Response.Body),
 			Headers:    s.Response.Headers,
+			Echo:       s.Response.Echo,
 		},
 	}
 

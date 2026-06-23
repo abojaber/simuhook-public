@@ -329,3 +329,76 @@ func TestServer_MultipleEndpointsRequest(t *testing.T) {
 		t.Fatalf("expected 'created', got %s", string(body2))
 	}
 }
+
+func TestServer_EchoResponseBody(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "echo-ep",
+		Method: "POST",
+		Path:   "/echo",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`should be ignored`),
+			Echo:       true,
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		headers := make(map[string]string)
+		for k := range req.Header {
+			headers[k] = req.Header.Get(k)
+		}
+		ep := r.Match(req.Method, req.URL.Path, headers, nil, body)
+		w.WriteHeader(ep.Response.StatusCode)
+		if ep.Response.Echo {
+			w.Write(body)
+		} else {
+			w.Write(ep.Response.Body)
+		}
+	}))
+	defer srv.Close()
+
+	payload := `{"hello":"world"}`
+	resp, err := http.Post(srv.URL+"/echo", "application/json", bytes.NewReader([]byte(payload)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if string(respBody) != payload {
+		t.Fatalf("expected echoed body %q, got %q", payload, string(respBody))
+	}
+}
+
+func TestServer_EchoDisabledUsesConfiguredBody(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "normal-ep",
+		Method: "POST",
+		Path:   "/normal",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`configured`),
+			Echo:       false,
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, body)
+		if ep.Response.Echo {
+			w.Write(body)
+		} else {
+			w.Write(ep.Response.Body)
+		}
+	}))
+	defer srv.Close()
+
+	resp, _ := http.Post(srv.URL+"/normal", "application/json", bytes.NewReader([]byte(`request body`)))
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if string(respBody) != "configured" {
+		t.Fatalf("expected configured body, got %q", string(respBody))
+	}
+}

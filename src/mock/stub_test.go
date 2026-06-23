@@ -133,3 +133,48 @@ response:
 		t.Fatalf("expected empty method, got %s", ep.Method)
 	}
 }
+
+func TestParseStubFile_Echo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "echo.yaml")
+	os.WriteFile(path, []byte(`
+id: echo-test
+method: POST
+path: /echo
+response:
+  status_code: 200
+  echo: true
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ep.Response.Echo {
+		t.Fatal("expected echo=true")
+	}
+	if string(ep.Response.Body) != "" {
+		t.Fatalf("expected empty body when echo is set, got %q", string(ep.Response.Body))
+	}
+}
+
+func TestParseStubFile_EchoDefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "normal.yaml")
+	os.WriteFile(path, []byte(`
+id: normal
+method: GET
+path: /ping
+response:
+  status_code: 200
+  body: ok
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Response.Echo {
+		t.Fatal("expected echo=false by default")
+	}
+}

@@ -118,3 +118,39 @@ Given a request to an unconfigured path
 When  the request arrives
 Then  the server responds with 404 and logs the unmatched request
 ```
+
+---
+
+## WS-015 — Echo mode: return request payload as response
+
+**Status:** `done` | **Priority:** `[Must]`
+
+**User Story:**
+> As a developer debugging an integration, I want an endpoint with `echo: true` to return the request body verbatim as the response so that I can inspect exactly what my client is sending without needing a separate echo server.
+
+**Acceptance Criteria:**
+```
+Given an endpoint configured with response.echo: true and response.body set to something else
+When  a POST/PUT/PATCH request with a body arrives
+Then  the endpoint returns the request body as the response body
+And   the configured response.body is ignored
+
+Given an endpoint configured with response.echo: true
+When  a GET request with no body arrives
+Then  the endpoint returns an empty response body
+
+Given an endpoint configured without response.echo (or echo: false)
+When  a request arrives
+Then  the endpoint returns the configured response.body as normal
+```
+
+**YAML Schema:**
+```yaml
+webhooks:
+  - name: debug-echo
+    path: /webhooks/echo
+    method: POST
+    response:
+      status_code: 200
+      echo: true
+```

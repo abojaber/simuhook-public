@@ -158,7 +158,11 @@ func main() {
 				responseStatus = http.StatusOK
 			}
 			w.WriteHeader(responseStatus)
-			if len(ep.Response.Body) > 0 {
+
+			// Echo mode: return the request body verbatim, ignore configured body
+			if ep.Response.Echo {
+				w.Write(body)
+			} else if len(ep.Response.Body) > 0 {
 				w.Write(ep.Response.Body)
 			}
 		}

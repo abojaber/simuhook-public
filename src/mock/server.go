@@ -56,7 +56,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 			StatusCode: http.StatusNotFound,
 			Body:       []byte(`{"error":"no matching endpoint"}`),
 		}
-		s.writeResponse(w, resp)
+		s.writeResponse(w, resp, resp.Body)
 		return
 	}
 
@@ -64,10 +64,16 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(ep.Response.Delay)
 	}
 
-	s.writeResponse(w, ep.Response)
+	// Echo mode: use request body instead of configured body
+	respBody := ep.Response.Body
+	if ep.Response.Echo {
+		respBody = body
+	}
+
+	s.writeResponse(w, ep.Response, respBody)
 }
 
-func (s *Server) writeResponse(w http.ResponseWriter, resp Response) {
+func (s *Server) writeResponse(w http.ResponseWriter, resp Response, bodyOverride []byte) {
 	for k, v := range resp.Headers {
 		w.Header().Set(k, v)
 	}
@@ -75,8 +81,8 @@ func (s *Server) writeResponse(w http.ResponseWriter, resp Response) {
 		resp.StatusCode = http.StatusOK
 	}
 	w.WriteHeader(resp.StatusCode)
-	if len(resp.Body) > 0 {
-		w.Write(resp.Body)
+	if len(bodyOverride) > 0 {
+		w.Write(bodyOverride)
 	}
 }
 

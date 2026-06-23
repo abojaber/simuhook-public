@@ -117,8 +117,12 @@ func main() {
 		for k := range r.Header {
 			headers[k] = r.Header.Get(k)
 		}
+		query := make(map[string]string)
+		for k := range r.URL.Query() {
+			query[k] = r.URL.Query().Get(k)
+		}
 
-		ep := registry.Match(r.Method, r.URL.Path, headers, body)
+		ep := registry.Match(r.Method, r.URL.Path, headers, query, body)
 		if ep == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)

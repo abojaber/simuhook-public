@@ -45,8 +45,12 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 	for k := range r.Header {
 		headers[k] = r.Header.Get(k)
 	}
+	query := make(map[string]string)
+	for k := range r.URL.Query() {
+		query[k] = r.URL.Query().Get(k)
+	}
 
-	ep := s.registry.Match(r.Method, r.URL.Path, headers, body)
+	ep := s.registry.Match(r.Method, r.URL.Path, headers, query, body)
 	if ep == nil {
 		resp := Response{
 			StatusCode: http.StatusNotFound,

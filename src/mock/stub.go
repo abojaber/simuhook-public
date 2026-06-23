@@ -13,6 +13,7 @@ type stubFile struct {
 	Method   string            `yaml:"method"`
 	Path     string            `yaml:"path"`
 	Headers  map[string]string `yaml:"headers,omitempty"`
+	Query    map[string]string `yaml:"query,omitempty"`
 	Payload  string            `yaml:"payload,omitempty"`
 	Response stubResponse      `yaml:"response"`
 }
@@ -44,6 +45,7 @@ func ParseStubFile(path string) (*Endpoint, error) {
 		Method:    s.Method,
 		Path:      s.Path,
 		Headers:   s.Headers,
+		Query:     s.Query,
 		Payload:   []byte(s.Payload),
 		CreatedAt: time.Now(),
 		Response: Response{

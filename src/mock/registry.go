@@ -67,7 +67,7 @@ func (r *Registry) List() []*Endpoint {
 	return eps
 }
 
-func (r *Registry) Match(method, path string, headers map[string]string, body []byte) *Endpoint {
+func (r *Registry) Match(method, path string, headers, query map[string]string, body []byte) *Endpoint {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, ep := range r.endpoints {
@@ -78,6 +78,9 @@ func (r *Registry) Match(method, path string, headers map[string]string, body []
 			continue
 		}
 		if !matchHeaders(ep.Headers, headers) {
+			continue
+		}
+		if !matchQuery(ep.Query, query) {
 			continue
 		}
 		if !matchPayload(ep.Payload, body) {
@@ -97,6 +100,18 @@ func matchPath(want, got string) bool {
 }
 
 func matchHeaders(want, got map[string]string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	for k, v := range want {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+func matchQuery(want, got map[string]string) bool {
 	if len(want) == 0 {
 		return true
 	}

@@ -67,12 +67,12 @@ func TestRegistry_MatchByMethod(t *testing.T) {
 	r := NewRegistry()
 	r.Add(&Endpoint{ID: "ep1", Method: "POST", Path: "/data", Response: Response{StatusCode: 201}})
 
-	ep := r.Match("POST", "/data", nil, nil)
+	ep := r.Match("POST", "/data", nil, nil, nil)
 	if ep == nil || ep.ID != "ep1" {
 		t.Fatal("expected match")
 	}
 
-	ep = r.Match("GET", "/data", nil, nil)
+	ep = r.Match("GET", "/data", nil, nil, nil)
 	if ep != nil {
 		t.Fatal("expected no match for wrong method")
 	}
@@ -85,12 +85,12 @@ func TestRegistry_MatchByHeaders(t *testing.T) {
 		Response: Response{StatusCode: 200},
 	})
 
-	ep := r.Match("POST", "/webhook", map[string]string{"X-Event": "user.created"}, nil)
+	ep := r.Match("POST", "/webhook", map[string]string{"X-Event": "user.created"}, nil, nil)
 	if ep == nil || ep.ID != "ep1" {
 		t.Fatal("expected match with correct header")
 	}
 
-	ep = r.Match("POST", "/webhook", map[string]string{"X-Event": "order.placed"}, nil)
+	ep = r.Match("POST", "/webhook", map[string]string{"X-Event": "order.placed"}, nil, nil)
 	if ep != nil {
 		t.Fatal("expected no match for wrong header value")
 	}
@@ -103,12 +103,12 @@ func TestRegistry_MatchByPayload(t *testing.T) {
 		Response: Response{StatusCode: 200},
 	})
 
-	ep := r.Match("POST", "/hook", nil, []byte(`{"event":"user.created"}`))
+	ep := r.Match("POST", "/hook", nil, nil, []byte(`{"event":"user.created"}`))
 	if ep == nil || ep.ID != "ep1" {
 		t.Fatal("expected match with correct payload")
 	}
 
-	ep = r.Match("POST", "/hook", nil, []byte(`{"event":"order.placed"}`))
+	ep = r.Match("POST", "/hook", nil, nil, []byte(`{"event":"order.placed"}`))
 	if ep != nil {
 		t.Fatal("expected no match for wrong payload")
 	}
@@ -118,12 +118,12 @@ func TestRegistry_MatchExactPath(t *testing.T) {
 	r := NewRegistry()
 	r.Add(&Endpoint{ID: "ep1", Path: "/api/v1/users", Response: Response{StatusCode: 200}})
 
-	ep := r.Match("GET", "/api/v1/users", nil, nil)
+	ep := r.Match("GET", "/api/v1/users", nil, nil, nil)
 	if ep == nil {
 		t.Fatal("expected match for exact path")
 	}
 
-	ep = r.Match("GET", "/api/v1/users/123", nil, nil)
+	ep = r.Match("GET", "/api/v1/users/123", nil, nil, nil)
 	if ep != nil {
 		t.Fatal("expected no match for different path")
 	}
@@ -144,7 +144,7 @@ func TestServer_HandlerMatch(t *testing.T) {
 		for k := range req.Header {
 			headers[k] = req.Header.Get(k)
 		}
-		ep := r.Match(req.Method, req.URL.Path, headers, body)
+		ep := r.Match(req.Method, req.URL.Path, headers, nil, body)
 		if ep == nil {
 			w.WriteHeader(404)
 			return
@@ -178,7 +178,7 @@ func TestServer_HandlerMatch(t *testing.T) {
 func TestServer_HandlerNoMatch(t *testing.T) {
 	r := NewRegistry()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ep := r.Match(req.Method, req.URL.Path, nil, nil)
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, nil)
 		if ep == nil {
 			w.WriteHeader(404)
 			w.Write([]byte(`{"error":"no matching endpoint"}`))
@@ -203,7 +203,7 @@ func TestRegistry_MatchEmptyMethod(t *testing.T) {
 	r.Add(&Endpoint{ID: "wild", Method: "", Path: "/catch", Response: Response{StatusCode: 200}})
 
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
-		ep := r.Match(method, "/catch", nil, nil)
+		ep := r.Match(method, "/catch", nil, nil, nil)
 		if ep == nil {
 			t.Fatalf("expected match for %s when method is empty", method)
 		}
@@ -216,10 +216,34 @@ func TestRegistry_MatchEmptyPayloadAndHeaders(t *testing.T) {
 
 	ep := r.Match("POST", "/hook",
 		map[string]string{"X-Any": "value"},
+		nil,
 		[]byte(`{"anything":"goes"}`),
 	)
 	if ep == nil || ep.ID != "ep1" {
 		t.Fatal("expected match when endpoint has no header/payload constraints")
+	}
+}
+
+func TestRegistry_MatchByQuery(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{ID: "ep1", Method: "GET", Path: "/ping",
+		Query:    map[string]string{"ping_id": "11022022", "ping_child": "43443"},
+		Response: Response{StatusCode: 200},
+	})
+
+	ep := r.Match("GET", "/ping", nil, map[string]string{"ping_id": "11022022", "ping_child": "43443"}, nil)
+	if ep == nil || ep.ID != "ep1" {
+		t.Fatal("expected match with correct query params")
+	}
+
+	ep = r.Match("GET", "/ping", nil, map[string]string{"ping_id": "11022022"}, nil)
+	if ep != nil {
+		t.Fatal("expected no match with missing query param")
+	}
+
+	ep = r.Match("GET", "/ping", nil, map[string]string{"ping_id": "wrong", "ping_child": "43443"}, nil)
+	if ep != nil {
+		t.Fatal("expected no match with wrong query param value")
 	}
 }
 
@@ -234,7 +258,7 @@ func TestServer_Delay(t *testing.T) {
 
 	start := time.Now()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ep := r.Match(req.Method, req.URL.Path, nil, nil)
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, nil)
 		time.Sleep(ep.Response.Delay)
 		w.WriteHeader(ep.Response.StatusCode)
 		w.Write(ep.Response.Body)
@@ -254,7 +278,7 @@ func TestServer_DefaultStatusCode(t *testing.T) {
 	r.Add(&Endpoint{ID: "def", Method: "GET", Path: "/def", Response: Response{Body: []byte(`ok`)}})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ep := r.Match(req.Method, req.URL.Path, nil, nil)
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, nil)
 		code := ep.Response.StatusCode
 		if code == 0 {
 			code = 200
@@ -285,7 +309,7 @@ func TestServer_MultipleEndpointsRequest(t *testing.T) {
 		for k := range req.Header {
 			headers[k] = req.Header.Get(k)
 		}
-		ep := r.Match(req.Method, req.URL.Path, headers, body)
+		ep := r.Match(req.Method, req.URL.Path, headers, nil, body)
 		w.WriteHeader(ep.Response.StatusCode)
 		w.Write(ep.Response.Body)
 	}))

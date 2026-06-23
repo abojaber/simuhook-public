@@ -1,8 +1,11 @@
 # Sample stub: simple ping endpoint
-# Demonstrates the minimal fields needed for a mock endpoint.
+# Demonstrates query parameter matching and a basic JSON response.
 id: ping
 method: GET
 path: /ping
+query:
+  ping_id: "11022022"
+  ping_child: "43443"
 response:
   status_code: 200
   headers:

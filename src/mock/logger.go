@@ -1,7 +1,6 @@
 package mock
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -93,11 +92,5 @@ func (l *Logger) Close() error {
 
 // NewRequestID generates a UUID v4 string for correlating log entries.
 func NewRequestID() string {
-	var buf [16]byte
-	rand.Read(buf[:])
-	// RFC 4122 variant
-	buf[6] = (buf[6] & 0x0f) | 0x40 // version 4
-	buf[8] = (buf[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
+	return newUUID()
 }

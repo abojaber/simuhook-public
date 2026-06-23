@@ -178,3 +178,54 @@ response:
 		t.Fatal("expected echo=false by default")
 	}
 }
+
+func TestParseStubFile_Template(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tmpl.yaml")
+	os.WriteFile(path, []byte(`
+id: tmpl-test
+method: POST
+path: /tmpl
+response:
+  status_code: 200
+  template: true
+  body: '{"id":"{{.UUID}}","time":"{{.Now}}"}'
+  headers:
+    X-ID: "{{.RequestID}}"
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ep.Response.Template {
+		t.Fatal("expected template=true")
+	}
+	if string(ep.Response.Body) != `{"id":"{{.UUID}}","time":"{{.Now}}"}` {
+		t.Fatalf("expected raw template body, got %q", string(ep.Response.Body))
+	}
+	if ep.Response.Headers["X-ID"] != "{{.RequestID}}" {
+		t.Fatalf("expected raw template header, got %q", ep.Response.Headers["X-ID"])
+	}
+}
+
+func TestParseStubFile_TemplateDefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plain.yaml")
+	os.WriteFile(path, []byte(`
+id: plain
+method: GET
+path: /plain
+response:
+  status_code: 200
+  body: static
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Response.Template {
+		t.Fatal("expected template=false by default")
+	}
+}

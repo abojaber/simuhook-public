@@ -1,0 +1,12 @@
+# Template stub: demonstrates dynamic response payload and headers.
+# Each request gets a fresh UUID, timestamp, and the HTTP method echoed back.
+id: order-created
+method: POST
+path: /webhooks/orders
+response:
+  status_code: 200
+  template: true
+  headers:
+    X-Request-ID: "{{.RequestID}}"
+    X-Timestamp: "{{.Now}}"
+  body: '{"id":"{{.UUID}}","event":"order.created","timestamp":{{.Timestamp}},"method":"{{.Method}}","body":"{{.Body}}"}'

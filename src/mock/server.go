@@ -56,7 +56,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 			StatusCode: http.StatusNotFound,
 			Body:       []byte(`{"error":"no matching endpoint"}`),
 		}
-		s.writeResponse(w, resp, resp.Body)
+		s.writeResponse(w, resp, resp.Body, nil)
 		return
 	}
 
@@ -64,17 +64,31 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(ep.Response.Delay)
 	}
 
-	// Echo mode: use request body instead of configured body
+	// Build template data if needed
+	requestID := NewRequestID()
+	var tmplData *TemplateData
+	if ep.Response.Template {
+		tmplData = BuildTemplateData(requestID, r.Method, r.URL.Path, body)
+	}
+
+	// Determine response body: echo > template > configured
 	respBody := ep.Response.Body
 	if ep.Response.Echo {
 		respBody = body
+	} else if ep.Response.Template && len(ep.Response.Body) > 0 {
+		rendered := ExecuteBodyTemplate(string(ep.Response.Body), tmplData, headers, query)
+		respBody = []byte(rendered)
 	}
 
-	s.writeResponse(w, ep.Response, respBody)
+	s.writeResponse(w, ep.Response, respBody, tmplData)
 }
 
-func (s *Server) writeResponse(w http.ResponseWriter, resp Response, bodyOverride []byte) {
+func (s *Server) writeResponse(w http.ResponseWriter, resp Response, bodyOverride []byte, tmplData *TemplateData) {
+	// Set response headers (with optional template execution)
 	for k, v := range resp.Headers {
+		if resp.Template && tmplData != nil {
+			v = ExecuteHeaderTemplate(v, tmplData, nil, nil)
+		}
 		w.Header().Set(k, v)
 	}
 	if resp.StatusCode == 0 {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -400,5 +401,207 @@ func TestServer_EchoDisabledUsesConfiguredBody(t *testing.T) {
 	respBody, _ := io.ReadAll(resp.Body)
 	if string(respBody) != "configured" {
 		t.Fatalf("expected configured body, got %q", string(respBody))
+	}
+}
+
+func TestExecuteBodyTemplate_RendersFields(t *testing.T) {
+	data := &TemplateData{
+		UUID:      "abc-def",
+		Now:       "2026-01-01T00:00:00Z",
+		Timestamp: 1765843200,
+		RequestID: "req-123",
+		Method:    "POST",
+		Path:      "/test",
+		Body:      `{"hello":"world"}`,
+	}
+
+	result := ExecuteBodyTemplate(`{"id":"{{.UUID}}","now":"{{.Now}}","ts":{{.Timestamp}},"method":"{{.Method}}"}`,
+		data, nil, nil)
+
+	expected := `{"id":"abc-def","now":"2026-01-01T00:00:00Z","ts":1765843200,"method":"POST"}`
+	if result != expected {
+		t.Fatalf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestExecuteBodyTemplate_NoTemplateMarkers(t *testing.T) {
+	result := ExecuteBodyTemplate(`{"static":"value"}`, &TemplateData{UUID: "x"}, nil, nil)
+	if result != `{"static":"value"}` {
+		t.Fatalf("expected unchanged body, got %q", result)
+	}
+}
+
+func TestExecuteBodyTemplate_WithHeaderFunc(t *testing.T) {
+	data := &TemplateData{UUID: "abc"}
+	headers := map[string]string{"X-Custom": "myvalue"}
+	result := ExecuteBodyTemplate(`{"h":"{{Header "X-Custom"}}"}`, data, headers, nil)
+	if result != `{"h":"myvalue"}` {
+		t.Fatalf("expected header value in body, got %q", result)
+	}
+}
+
+func TestExecuteBodyTemplate_RandomInt(t *testing.T) {
+	data := &TemplateData{}
+	for i := 0; i < 50; i++ {
+		result := ExecuteBodyTemplate(`{{RandomInt 10 20}}`, data, nil, nil)
+		if result < "10" || result > "19" {
+			t.Fatalf("expected value between 10 and 19, got %s", result)
+		}
+	}
+}
+
+func TestExecuteBodyTemplate_RandomHex(t *testing.T) {
+	data := &TemplateData{}
+	result := ExecuteBodyTemplate(`{{RandomHex 16}}`, data, nil, nil)
+	if len(result) != 16 {
+		t.Fatalf("expected 16-char hex, got %q (len=%d)", result, len(result))
+	}
+	for _, c := range result {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			t.Fatalf("non-hex character %c in %q", c, result)
+		}
+	}
+}
+
+func TestExecuteHeaderTemplate_RendersField(t *testing.T) {
+	data := &TemplateData{RequestID: "req-999"}
+	result := ExecuteHeaderTemplate("{{.RequestID}}", data, nil, nil)
+	if result != "req-999" {
+		t.Fatalf("expected req-999, got %q", result)
+	}
+}
+
+func TestExecuteHeaderTemplate_NoMarkers(t *testing.T) {
+	result := ExecuteHeaderTemplate("static-value", &TemplateData{RequestID: "x"}, nil, nil)
+	if result != "static-value" {
+		t.Fatalf("expected unchanged, got %q", result)
+	}
+}
+
+func TestServer_TemplateBody(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "tmpl-ep",
+		Method: "POST",
+		Path:   "/tmpl",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`{"id":"{{.UUID}}","method":"{{.Method}}"}`),
+			Template:   true,
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		headers := make(map[string]string)
+		for k := range req.Header {
+			headers[k] = req.Header.Get(k)
+		}
+		ep := r.Match(req.Method, req.URL.Path, headers, nil, body)
+		requestID := NewRequestID()
+		var respBody []byte
+		if ep.Response.Template {
+			data := BuildTemplateData(requestID, req.Method, req.URL.Path, body)
+			rendered := ExecuteBodyTemplate(string(ep.Response.Body), data, headers, nil)
+			respBody = []byte(rendered)
+		} else {
+			respBody = ep.Response.Body
+		}
+		w.WriteHeader(ep.Response.StatusCode)
+		w.Write(respBody)
+	}))
+	defer srv.Close()
+
+	resp, _ := http.Post(srv.URL+"/tmpl", "application/json", bytes.NewReader([]byte(`{}`)))
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	// Verify UUID format and method
+	bodyStr := string(respBody)
+	if !strings.Contains(bodyStr, `"method":"POST"`) {
+		t.Fatalf("expected method POST in body, got %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `"id":"`) {
+		t.Fatalf("expected UUID in body, got %s", bodyStr)
+	}
+}
+
+func TestServer_TemplateHeader(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "hdr-ep",
+		Method: "GET",
+		Path:   "/hdr",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`ok`),
+			Template:   true,
+			Headers:    map[string]string{"X-ID": "{{.RequestID}}"},
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, nil)
+		requestID := NewRequestID()
+		data := BuildTemplateData(requestID, req.Method, req.URL.Path, nil)
+		for k, v := range ep.Response.Headers {
+			if ep.Response.Template {
+				v = ExecuteHeaderTemplate(v, data, nil, nil)
+			}
+			w.Header().Set(k, v)
+		}
+		w.WriteHeader(ep.Response.StatusCode)
+		w.Write(ep.Response.Body)
+	}))
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/hdr")
+	defer resp.Body.Close()
+
+	xid := resp.Header.Get("X-ID")
+	if xid == "" {
+		t.Fatal("expected X-ID header")
+	}
+	if len(xid) != 36 {
+		t.Fatalf("expected UUID format (36 chars), got %q (len=%d)", xid, len(xid))
+	}
+}
+
+func TestServer_EchoOverridesTemplate(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "echo-tmpl",
+		Method: "POST",
+		Path:   "/echo-tmpl",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`{"should":"not appear"}`),
+			Echo:       true,
+			Template:   true,
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, body)
+		w.WriteHeader(ep.Response.StatusCode)
+		if ep.Response.Echo {
+			w.Write(body)
+		} else if ep.Response.Template {
+			data := BuildTemplateData(NewRequestID(), req.Method, req.URL.Path, body)
+			rendered := ExecuteBodyTemplate(string(ep.Response.Body), data, nil, nil)
+			w.Write([]byte(rendered))
+		} else {
+			w.Write(ep.Response.Body)
+		}
+	}))
+	defer srv.Close()
+
+	payload := `{"sent":"back"}`
+	resp, _ := http.Post(srv.URL+"/echo-tmpl", "application/json", bytes.NewReader([]byte(payload)))
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if string(respBody) != payload {
+		t.Fatalf("expected echoed body %q, got %q", payload, string(respBody))
 	}
 }

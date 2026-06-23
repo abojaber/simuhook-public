@@ -19,4 +19,5 @@ type Response struct {
 	Headers    map[string]string `json:"headers,omitempty"`
 	Delay      time.Duration     `json:"delay,omitempty"`
 	Echo       bool              `json:"echo,omitempty"`
+	Template   bool              `json:"template,omitempty"`
 }

@@ -118,6 +118,7 @@ func main() {
 	// Webhook handler — matched & unmatched requests are logged
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		requestID := mock.NewRequestID()
 
 		body := make([]byte, 0)
 		if r.Body != nil {
@@ -138,32 +139,54 @@ func main() {
 		var (
 			responseStatus int
 			webhookName    string
+			responseBody   []byte
 		)
 
 		if ep == nil {
 			responseStatus = http.StatusNotFound
+			responseBody = []byte(`{"error":"no matching endpoint"}`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(responseStatus)
-			w.Write([]byte(`{"error":"no matching endpoint"}`))
+			w.Write(responseBody)
 		} else {
 			webhookName = ep.ID
+
+			// Build template data (needed for both body and headers if template: true)
+			var tmplData *mock.TemplateData
+			if ep.Response.Template {
+				tmplData = mock.BuildTemplateData(requestID, r.Method, r.URL.Path, body)
+			}
+
 			if ep.Response.Delay > 0 {
 				time.Sleep(ep.Response.Delay)
 			}
+
+			// Set response headers (with optional template execution)
 			for k, v := range ep.Response.Headers {
+				if ep.Response.Template {
+					v = mock.ExecuteHeaderTemplate(v, tmplData, headers, query)
+				}
 				w.Header().Set(k, v)
 			}
+
 			responseStatus = ep.Response.StatusCode
 			if responseStatus == 0 {
 				responseStatus = http.StatusOK
 			}
 			w.WriteHeader(responseStatus)
 
-			// Echo mode: return the request body verbatim, ignore configured body
+			// Echo mode takes precedence over everything
 			if ep.Response.Echo {
-				w.Write(body)
-			} else if len(ep.Response.Body) > 0 {
-				w.Write(ep.Response.Body)
+				responseBody = body
+			} else if ep.Response.Template && len(ep.Response.Body) > 0 {
+				rendered := mock.ExecuteBodyTemplate(string(ep.Response.Body), tmplData, headers, query)
+				responseBody = []byte(rendered)
+			} else {
+				responseBody = ep.Response.Body
+			}
+
+			if len(responseBody) > 0 {
+				w.Write(responseBody)
 			}
 		}
 
@@ -171,7 +194,7 @@ func main() {
 		latency := time.Since(start)
 		logger.Log(mock.LogEntry{
 			Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
-			RequestID:      mock.NewRequestID(),
+			RequestID:      requestID,
 			Webhook:        webhookName,
 			Method:         r.Method,
 			Path:           r.URL.Path,

@@ -1,3 +1,6 @@
+# Order placed webhook — header matching demo.
+# Demonstrates: header matching, custom status code (202), delay.
+# Only matches POST requests with X-Event: order.placed.
 id: order-placed
 method: POST
 path: /webhooks/order

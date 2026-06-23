@@ -1,3 +1,5 @@
+# Health check — minimal stub example.
+# Demonstrates: static JSON response, GET method.
 id: health
 method: GET
 path: /health

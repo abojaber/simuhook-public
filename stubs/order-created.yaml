@@ -1,5 +1,8 @@
-# Template stub: demonstrates dynamic response payload and headers.
-# Each request gets a fresh UUID, timestamp, and the HTTP method echoed back.
+# Order created webhook — template mode demo.
+# Demonstrates: template: true — dynamic body and headers with Go template variables.
+# Each request gets a fresh UUID, timestamp, and dynamic values injected.
+# Template variables available: .UUID, .Now, .Timestamp, .RequestID, .Method, .Path, .Body
+# Template functions available: Header, Query, RandomInt, RandomHex
 id: order-created
 method: POST
 path: /webhooks/orders

@@ -1,0 +1,12 @@
+# Payload match — payload-only matching demo.
+# Demonstrates: exact request body matching without headers.
+# Only matches POST requests with the exact body {"type":"webhook","version":"1.0"}.
+# Returns different responses based on the payload — useful for testing
+# that your client sends the exact body you expect.
+id: payload-match
+method: POST
+path: /webhooks/notification
+payload: '{"type":"webhook","version":"1.0"}'
+response:
+  status_code: 200
+  body: '{"status":"notification received"}'

@@ -1,5 +1,6 @@
-# Sample stub: simple ping endpoint
-# Demonstrates query parameter matching and a basic JSON response.
+# Ping endpoint — query parameter matching demo.
+# Demonstrates: query string matching, JSON response with Content-Type header.
+# Only matches GET /ping when both ping_id AND ping_child are present with exact values.
 id: ping
 method: GET
 path: /ping

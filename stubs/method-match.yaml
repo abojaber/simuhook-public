@@ -1,0 +1,9 @@
+# Method match — wildcard method demo.
+# Demonstrates: empty method field matches ANY HTTP method.
+# This endpoint responds to GET, POST, PUT, PATCH, DELETE — any method on /catch-all.
+# Useful for quick health checks or when you don't care about the HTTP method.
+id: method-match
+path: /catch-all
+response:
+  status_code: 200
+  body: '{"message":"matched any method"}'

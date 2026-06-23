@@ -1,5 +1,7 @@
-# Echo stub: returns the request body verbatim
-# Useful for debugging what your client is actually sending.
+# Echo endpoint — echo mode demo.
+# Demonstrates: echo: true — returns the request body verbatim as the response.
+# Useful for debugging exactly what payload your client is sending.
+# The configured response.body is ignored when echo is true.
 id: echo
 method: POST
 path: /webhooks/echo

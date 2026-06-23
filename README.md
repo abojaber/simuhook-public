@@ -12,7 +12,7 @@ Starts on `:8080` (override with `--addr` or `PORT`). Watches `../stubs/` (overr
 
 ## Stub Files (YAML)
 
-Place `.yaml` / `.yml` files in the `stubs/` directory. Each file defines one endpoint. Files are loaded at startup and hot-reloaded on change.
+Place `.yaml` / `.yml` files in the `stubs/` directory. Each file defines one endpoint. Files are loaded at startup and hot-reloaded on change. See [`stubs/README.md`](stubs/README.md) for a full reference and usage examples.
 
 ```yaml
 # stubs/user-create.yaml

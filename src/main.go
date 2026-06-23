@@ -18,7 +18,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	stubsDir := flag.String("stubs", "stubs", "stubs directory")
+	stubsDir := flag.String("stubs", "../stubs", "stubs directory")
 	flag.Parse()
 
 	if v := os.Getenv("PORT"); v != "" && *addr == ":8080" {

@@ -1,0 +1,10 @@
+# Sample stub: simple ping endpoint
+# Demonstrates the minimal fields needed for a mock endpoint.
+id: ping
+method: GET
+path: /ping
+response:
+  status_code: 200
+  headers:
+    Content-Type: application/json
+  body: '{"message":"pong"}'

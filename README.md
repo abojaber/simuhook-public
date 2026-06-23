@@ -8,7 +8,7 @@ A mock HTTP server. Define endpoints as YAML files — the server watches the di
 cd src && go run .
 ```
 
-Starts on `:8080` (override with `--addr` or `PORT`). Watches `stubs/` (override with `--stubs` or `STUBS_DIR`).
+Starts on `:8080` (override with `--addr` or `PORT`). Watches `../stubs/` (override with `--stubs` or `STUBS_DIR`).
 
 ## Stub Files (YAML)
 
@@ -62,13 +62,14 @@ An endpoint matches when **all** specified conditions are met:
 | `DELETE` | `/_admin/endpoints/{id}` | Remove endpoint |
 
 ```bash
-# create via API
+# create via API (id must be unique, not conflicting with stub files)
 curl -X POST http://localhost:8080/_admin/endpoints \
   -H "Content-Type: application/json" \
-  -d '{"id":"ping","method":"GET","path":"/ping","response":{"status_code":200,"body":"cG9uZw=="}}'
+  -d '{"id":"my-endpoint","method":"GET","path":"/my-endpoint","response":{"status_code":200,"body":"bXkgZW5kcG9pbnQ="}}'
 
 # call the mock endpoint
-curl http://localhost:8080/ping                     # → 200 pong
+curl http://localhost:8080/ping                     # → 200 (from ping.yaml stub)
+curl http://localhost:8080/my-endpoint              # → 200 my-endpoint (from API)
 curl -X POST http://localhost:8080/ping            # → 404 (method mismatch)
 ```
 
@@ -85,13 +86,14 @@ src/
     └── watcher.go    # File watcher (hot-reload)
 
 stubs/
-├── user-create.yaml
+├── health.yaml
 ├── order-placed.yaml
-└── health.yaml
+├── ping.yaml
+└── user-create.yaml
 ```
 
 ## Testing
 
 ```bash
-cd src && go test -v -race ./...
+go test -v -race ./src/...
 ```

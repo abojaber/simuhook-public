@@ -40,7 +40,7 @@ webhooks:
 
 ## WS-002 — Log incoming requests to file
 
-**Status:** `ready` | **Priority:** `[Must]`
+**Status:** `done` | **Priority:** `[Must]`
 
 **User Story:**
 > As a developer testing an integration, I want every incoming webhook request logged to a file so that I can inspect what payloads and headers were actually received.

@@ -8,7 +8,7 @@ A mock HTTP server. Define endpoints as YAML files — the server watches the di
 cd src && go run .
 ```
 
-Starts on `:8080` (override with `--addr` or `PORT`). Watches `../stubs/` (override with `--stubs` or `STUBS_DIR`).
+Starts on `:8080` (override with `--addr` or `PORT`). Watches `../stubs/` (override with `--stubs` or `STUBS_DIR`). Logs every request to `logs/` (override with `--log-dir` or `LOG_DIR`).
 
 ## Stub Files (YAML)
 
@@ -49,7 +49,30 @@ An endpoint matches when **all** specified conditions are met:
 - `method` — must equal request method (empty = match any)
 - `path` — exact match
 - `headers` — all key/value pairs present in request
+- `query` — all key/value pairs present in query string
 - `payload` — exact body match
+
+## Request Logging
+
+Every request to a webhook endpoint is logged as a JSON line to `logs/<webhook-id>.log`. Unmatched requests go to `logs/_unmatched.log`.
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.123Z",
+  "request_id": "uuid-v4",
+  "webhook": "health",
+  "method": "GET",
+  "path": "/health",
+  "headers": {"User-Agent": "curl/8.7.1"},
+  "body": "",
+  "query": {},
+  "response_status": 200,
+  "latency_ms": 0.02,
+  "matched": true
+}
+```
+
+The log directory defaults to `logs/` — override with `--log-dir` or `LOG_DIR` env var.
 
 ## Admin API
 
@@ -83,6 +106,7 @@ src/
     ├── registry.go   # Store, match, CRUD endpoints
     ├── server.go     # HTTP handler
     ├── stub.go       # YAML stub file parser
+    ├── logger.go     # Request logging (JSON Lines)
     └── watcher.go    # File watcher (hot-reload)
 
 stubs/

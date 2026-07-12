@@ -229,3 +229,77 @@ response:
 		t.Fatal("expected template=false by default")
 	}
 }
+
+func TestParseStubFile_MultipleResponses(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "varied.yaml")
+	os.WriteFile(path, []byte(`
+id: varied
+method: GET
+path: /status
+responses:
+  - status_code: 200
+    body: ok
+    weight: 80
+  - status_code: 500
+    body: fail
+    weight: 20
+    delay: 1s
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ep.Responses) != 2 {
+		t.Fatalf("expected 2 responses, got %d", len(ep.Responses))
+	}
+	if ep.Responses[0].StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", ep.Responses[0].StatusCode)
+	}
+	if ep.Responses[0].Weight != 80 {
+		t.Fatalf("expected weight 80, got %d", ep.Responses[0].Weight)
+	}
+	if string(ep.Responses[0].Body) != "ok" {
+		t.Fatalf("expected body ok, got %q", string(ep.Responses[0].Body))
+	}
+	if ep.Responses[1].StatusCode != 500 {
+		t.Fatalf("expected 500, got %d", ep.Responses[1].StatusCode)
+	}
+	if ep.Responses[1].Weight != 20 {
+		t.Fatalf("expected weight 20, got %d", ep.Responses[1].Weight)
+	}
+	if ep.Responses[1].Delay != 1_000_000_000 {
+		t.Fatalf("expected 1s delay, got %v", ep.Responses[1].Delay)
+	}
+}
+
+func TestParseStubFile_ResponsesWithEchoAndTemplate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "advanced.yaml")
+	os.WriteFile(path, []byte(`
+id: advanced
+method: POST
+path: /adv
+responses:
+  - status_code: 200
+    echo: true
+  - status_code: 200
+    template: true
+    body: '{"id":"{{.UUID}}"}'
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ep.Responses[0].Echo {
+		t.Fatal("expected echo=true on first variant")
+	}
+	if !ep.Responses[1].Template {
+		t.Fatal("expected template=true on second variant")
+	}
+	if string(ep.Responses[1].Body) != `{"id":"{{.UUID}}"}` {
+		t.Fatalf("expected template body, got %q", string(ep.Responses[1].Body))
+	}
+}

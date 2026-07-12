@@ -151,38 +151,41 @@ func main() {
 		} else {
 			webhookName = ep.ID
 
+			// Pick response variant (singular or from responses array)
+			resp := mock.PickResponse(ep)
+
 			// Build template data (needed for both body and headers if template: true)
 			var tmplData *mock.TemplateData
-			if ep.Response.Template {
+			if resp.Template {
 				tmplData = mock.BuildTemplateData(requestID, r.Method, r.URL.Path, body)
 			}
 
-			if ep.Response.Delay > 0 {
-				time.Sleep(ep.Response.Delay)
+			if resp.Delay > 0 {
+				time.Sleep(resp.Delay)
 			}
 
 			// Set response headers (with optional template execution)
-			for k, v := range ep.Response.Headers {
-				if ep.Response.Template {
+			for k, v := range resp.Headers {
+				if resp.Template {
 					v = mock.ExecuteHeaderTemplate(v, tmplData, headers, query)
 				}
 				w.Header().Set(k, v)
 			}
 
-			responseStatus = ep.Response.StatusCode
+			responseStatus = resp.StatusCode
 			if responseStatus == 0 {
 				responseStatus = http.StatusOK
 			}
 			w.WriteHeader(responseStatus)
 
 			// Echo mode takes precedence over everything
-			if ep.Response.Echo {
+			if resp.Echo {
 				responseBody = body
-			} else if ep.Response.Template && len(ep.Response.Body) > 0 {
-				rendered := mock.ExecuteBodyTemplate(string(ep.Response.Body), tmplData, headers, query)
+			} else if resp.Template && len(resp.Body) > 0 {
+				rendered := mock.ExecuteBodyTemplate(string(resp.Body), tmplData, headers, query)
 				responseBody = []byte(rendered)
 			} else {
-				responseBody = ep.Response.Body
+				responseBody = resp.Body
 			}
 
 			if len(responseBody) > 0 {

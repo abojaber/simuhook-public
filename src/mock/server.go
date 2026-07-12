@@ -60,27 +60,30 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ep.Response.Delay > 0 {
-		time.Sleep(ep.Response.Delay)
+	// Pick response variant (singular or from responses array)
+	resp := PickResponse(ep)
+
+	if resp.Delay > 0 {
+		time.Sleep(resp.Delay)
 	}
 
 	// Build template data if needed
 	requestID := NewRequestID()
 	var tmplData *TemplateData
-	if ep.Response.Template {
+	if resp.Template {
 		tmplData = BuildTemplateData(requestID, r.Method, r.URL.Path, body)
 	}
 
 	// Determine response body: echo > template > configured
-	respBody := ep.Response.Body
-	if ep.Response.Echo {
+	respBody := resp.Body
+	if resp.Echo {
 		respBody = body
-	} else if ep.Response.Template && len(ep.Response.Body) > 0 {
-		rendered := ExecuteBodyTemplate(string(ep.Response.Body), tmplData, headers, query)
+	} else if resp.Template && len(resp.Body) > 0 {
+		rendered := ExecuteBodyTemplate(string(resp.Body), tmplData, headers, query)
 		respBody = []byte(rendered)
 	}
 
-	s.writeResponse(w, ep.Response, respBody, tmplData)
+	s.writeResponse(w, *resp, respBody, tmplData)
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, resp Response, bodyOverride []byte, tmplData *TemplateData) {

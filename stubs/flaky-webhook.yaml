@@ -1,0 +1,18 @@
+# Flaky webhook — response variability demo.
+# Demonstrates: multiple response variants with weighted random selection.
+# 80% of requests succeed, 15% fail with bad request, 5% have a server error with delay.
+# Useful for testing how your client handles intermittent failures.
+id: flaky-webhook
+method: POST
+path: /webhooks/payment
+responses:
+  - status_code: 200
+    body: '{"status":"completed","transaction_id":"txn_12345"}'
+    weight: 80
+  - status_code: 400
+    body: '{"error":"insufficient_funds"}'
+    weight: 15
+  - status_code: 500
+    body: '{"error":"internal_error"}'
+    weight: 5
+    delay: 2s

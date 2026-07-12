@@ -605,3 +605,131 @@ func TestServer_EchoOverridesTemplate(t *testing.T) {
 		t.Fatalf("expected echoed body %q, got %q", payload, string(respBody))
 	}
 }
+
+func TestPickResponse_FallsBackToSingular(t *testing.T) {
+	ep := &Endpoint{
+		Response: Response{StatusCode: 200, Body: []byte(`singular`)},
+	}
+	for i := 0; i < 10; i++ {
+		r := PickResponse(ep)
+		if r.StatusCode != 200 || string(r.Body) != "singular" {
+			t.Fatalf("expected singular response")
+		}
+	}
+}
+
+func TestPickResponse_RoundRobin(t *testing.T) {
+	ep := &Endpoint{
+		Responses: []Response{
+			{StatusCode: 200, Body: []byte(`first`)},
+			{StatusCode: 201, Body: []byte(`second`)},
+			{StatusCode: 202, Body: []byte(`third`)},
+		},
+	}
+
+	expected := []int{200, 201, 202, 200, 201, 202}
+	for i, want := range expected {
+		r := PickResponse(ep)
+		if r.StatusCode != want {
+			t.Fatalf("round-robin step %d: expected %d, got %d", i, want, r.StatusCode)
+		}
+	}
+}
+
+func TestPickResponse_WeightedRandom(t *testing.T) {
+	ep := &Endpoint{
+		Responses: []Response{
+			{StatusCode: 200, Weight: 90},
+			{StatusCode: 500, Weight: 10},
+		},
+	}
+
+	counts := map[int]int{}
+	for i := 0; i < 1000; i++ {
+		r := PickResponse(ep)
+		counts[r.StatusCode]++
+	}
+
+	if counts[200] < 800 {
+		t.Fatalf("expected ~900 success, got %d", counts[200])
+	}
+	if counts[500] < 1 {
+		t.Fatal("expected at least one 500")
+	}
+}
+
+func TestPickResponse_EqualWeight(t *testing.T) {
+	ep := &Endpoint{
+		Responses: []Response{
+			{StatusCode: 200, Weight: 1},
+			{StatusCode: 404, Weight: 1},
+		},
+	}
+
+	counts := map[int]int{}
+	for i := 0; i < 1000; i++ {
+		r := PickResponse(ep)
+		counts[r.StatusCode]++
+	}
+
+	if counts[200] < 300 || counts[404] < 300 {
+		t.Fatalf("expected both statuses to appear, got %v", counts)
+	}
+}
+
+func TestPickResponse_NoWeightsUsesRoundRobin(t *testing.T) {
+	ep := &Endpoint{
+		Responses: []Response{
+			{StatusCode: 200, Body: []byte(`a`)},
+			{StatusCode: 200, Body: []byte(`b`)},
+		},
+	}
+
+	bodies := make([]string, 4)
+	for i := 0; i < 4; i++ {
+		r := PickResponse(ep)
+		bodies[i] = string(r.Body)
+	}
+
+	expected := []string{"a", "b", "a", "b"}
+	for i, b := range bodies {
+		if b != expected[i] {
+			t.Fatalf("expected %q at step %d, got %q", expected[i], i, b)
+		}
+	}
+}
+
+func TestServer_ResponseVariability(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{
+		ID:     "varied",
+		Method: "GET",
+		Path:   "/varied",
+		Responses: []Response{
+			{StatusCode: 200, Body: []byte(`success`), Weight: 80},
+			{StatusCode: 500, Body: []byte(`error`), Weight: 20},
+		},
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ep := r.Match(req.Method, req.URL.Path, nil, nil, nil)
+		resp := PickResponse(ep)
+		w.WriteHeader(resp.StatusCode)
+		w.Write(resp.Body)
+	}))
+	defer srv.Close()
+
+	counts := map[int]int{}
+	for i := 0; i < 200; i++ {
+		resp, _ := http.Get(srv.URL + "/varied")
+		resp.Body.Close()
+		counts[resp.StatusCode]++
+	}
+
+	if counts[200] < 120 {
+		t.Fatalf("expected mostly 200s, got %v", counts)
+	}
+	if counts[500] < 5 {
+		t.Fatalf("expected some 500s, got %v", counts)
+	}
+}

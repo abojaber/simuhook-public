@@ -9,13 +9,14 @@ import (
 )
 
 type stubFile struct {
-	ID       string            `yaml:"id"`
-	Method   string            `yaml:"method"`
-	Path     string            `yaml:"path"`
-	Headers  map[string]string `yaml:"headers,omitempty"`
-	Query    map[string]string `yaml:"query,omitempty"`
-	Payload  string            `yaml:"payload,omitempty"`
-	Response stubResponse      `yaml:"response"`
+	ID        string            `yaml:"id"`
+	Method    string            `yaml:"method"`
+	Path      string            `yaml:"path"`
+	Headers   map[string]string `yaml:"headers,omitempty"`
+	Query     map[string]string `yaml:"query,omitempty"`
+	Payload   string            `yaml:"payload,omitempty"`
+	Response  stubResponse      `yaml:"response"`
+	Responses []stubResponse    `yaml:"responses,omitempty"`
 }
 
 type stubResponse struct {
@@ -25,6 +26,26 @@ type stubResponse struct {
 	Delay      string            `yaml:"delay,omitempty"`
 	Echo       bool              `yaml:"echo,omitempty"`
 	Template   bool              `yaml:"template,omitempty"`
+	Weight     int               `yaml:"weight,omitempty"`
+}
+
+func parseStubResponse(s stubResponse) (Response, error) {
+	r := Response{
+		StatusCode: s.StatusCode,
+		Body:       []byte(s.Body),
+		Headers:    s.Headers,
+		Echo:       s.Echo,
+		Template:   s.Template,
+		Weight:     s.Weight,
+	}
+	if s.Delay != "" {
+		d, err := time.ParseDuration(s.Delay)
+		if err != nil {
+			return r, fmt.Errorf("invalid delay %q: %w", s.Delay, err)
+		}
+		r.Delay = d
+	}
+	return r, nil
 }
 
 func ParseStubFile(path string) (*Endpoint, error) {
@@ -42,6 +63,11 @@ func ParseStubFile(path string) (*Endpoint, error) {
 		return nil, fmt.Errorf("stub file %s missing id", path)
 	}
 
+	singleResp, err := parseStubResponse(s.Response)
+	if err != nil {
+		return nil, fmt.Errorf("stub %s response: %w", s.ID, err)
+	}
+
 	ep := &Endpoint{
 		ID:        s.ID,
 		Method:    s.Method,
@@ -50,21 +76,16 @@ func ParseStubFile(path string) (*Endpoint, error) {
 		Query:     s.Query,
 		Payload:   []byte(s.Payload),
 		CreatedAt: time.Now(),
-		Response: Response{
-			StatusCode: s.Response.StatusCode,
-			Body:       []byte(s.Response.Body),
-			Headers:    s.Response.Headers,
-			Echo:       s.Response.Echo,
-			Template:   s.Response.Template,
-		},
+		Response:  singleResp,
 	}
 
-	if s.Response.Delay != "" {
-		d, err := time.ParseDuration(s.Response.Delay)
+	// Parse multiple response variants if present
+	for _, sr := range s.Responses {
+		r, err := parseStubResponse(sr)
 		if err != nil {
-			return nil, fmt.Errorf("stub %s invalid delay %q: %w", s.ID, s.Response.Delay, err)
+			return nil, fmt.Errorf("stub %s response variant: %w", s.ID, err)
 		}
-		ep.Response.Delay = d
+		ep.Responses = append(ep.Responses, r)
 	}
 
 	return ep, nil

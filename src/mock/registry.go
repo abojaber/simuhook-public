@@ -2,7 +2,9 @@ package mock
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
+	"sync/atomic"
 )
 
 type Registry struct {
@@ -128,4 +130,49 @@ func matchPayload(want, got []byte) bool {
 		return true
 	}
 	return string(want) == string(got)
+}
+
+// PickResponse selects a response variant for the given endpoint.
+// If the endpoint has multiple responses, it uses weighted random selection
+// (if weights are present) or round-robin (if no weights).
+// Falls back to the singular Response if no variants are configured.
+func PickResponse(ep *Endpoint) *Response {
+	if len(ep.Responses) == 0 {
+		return &ep.Response
+	}
+
+	if hasWeights(ep.Responses) {
+		return pickWeighted(ep.Responses)
+	}
+
+	// Round-robin
+	idx := atomic.AddUint64(&ep.rrIndex, 1) - 1
+	return &ep.Responses[idx%uint64(len(ep.Responses))]
+}
+
+func hasWeights(responses []Response) bool {
+	for _, r := range responses {
+		if r.Weight > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func pickWeighted(responses []Response) *Response {
+	total := 0
+	for _, r := range responses {
+		total += r.Weight
+	}
+	if total <= 0 {
+		return &responses[rand.Intn(len(responses))]
+	}
+	n := rand.Intn(total)
+	for i, r := range responses {
+		n -= r.Weight
+		if n < 0 {
+			return &responses[i]
+		}
+	}
+	return &responses[len(responses)-1]
 }

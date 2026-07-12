@@ -10,7 +10,9 @@ type Endpoint struct {
 	Query     map[string]string `json:"query,omitempty"`
 	Payload   []byte            `json:"payload,omitempty"`
 	Response  Response          `json:"response"`
+	Responses []Response        `json:"responses,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
+	rrIndex   uint64            // round-robin counter (not serialized)
 }
 
 type Response struct {
@@ -20,4 +22,5 @@ type Response struct {
 	Delay      time.Duration     `json:"delay,omitempty"`
 	Echo       bool              `json:"echo,omitempty"`
 	Template   bool              `json:"template,omitempty"`
+	Weight     int               `json:"weight,omitempty"`
 }

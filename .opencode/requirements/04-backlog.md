@@ -11,7 +11,9 @@
 **User Story:**
 > As a developer, I want an interactive terminal dashboard showing live request counts, response times, and recent logs so that I can monitor the simulator in real time during demos.
 
-Leveraging `bubbletea` or similar Go TUI framework.
+> **Note:** A simpler CLI dashboard (WS-016) was already implemented — boxed startup banner + per-request log lines. This story covers a **full interactive TUI** with real-time screen updates, charts, hit-rate visualization, and keyboard navigation.
+
+Leveraging `bubbletea` or similar Go TUI framework. The existing `StatsTracker` and ring buffer (50 entries) can be reused as the data source.
 
 ---
 

@@ -4,36 +4,40 @@
 
 ---
 
-## WS-001 — Define webhook endpoints via YAML config
+## WS-001 — Define webhook endpoints via YAML stubs
 
-**Status:** `ready` | **Priority:** `[Must]`
+**Status:** `done` | **Priority:** `[Must]`
 
 **User Story:**
-> As a developer, I want to define webhook endpoints in a YAML configuration file so that I can version-control my webhook definitions and launch the simulator with a single command.
+> As a developer, I want to define webhook endpoints in YAML stub files so that I can version-control my webhook definitions and launch the simulator with a single command.
 
 **Acceptance Criteria:**
 ```
-Given a valid config.yaml file defining one or more webhook endpoints
-When  I run `webhooker serve --config config.yaml`
-Then  the server starts and exposes all defined endpoints
+Given valid YAML stub files in the stubs directory
+When  I start the server
+Then  all defined endpoints are loaded and exposed
 
-Given a config.yaml with an invalid schema
-When  I run `webhooker serve --config config.yaml`
-Then  the CLI exits with a descriptive validation error and a non-zero exit code
+Given a stub file with an invalid schema (missing id)
+When  the server starts
+Then  the invalid file is skipped with a descriptive log message
+
+Given a stub file is created, modified, or deleted while the server is running
+When  the file change is detected
+Then  the endpoint is added, updated, or removed live without restart
 ```
 
-**YAML Schema:**
+**YAML Schema (per-file):**
 ```yaml
-webhooks:
-  - name: order-created
-    path: /webhooks/orders
-    method: POST
-    response:
-      status: 200
-      headers:
-        Content-Type: application/json
-      body: '{"received": true}'
-      delay: 0ms
+# <name>.yaml
+id: order-created
+method: POST
+path: /webhooks/orders
+response:
+  status_code: 200
+  headers:
+    Content-Type: application/json
+  body: '{"received": true}'
+  delay: 0s
 ```
 
 ---
@@ -61,7 +65,7 @@ Then  the directory is created automatically
 
 ## WS-003 — Custom responses with delay
 
-**Status:** `ready` | **Priority:** `[Must]`
+**Status:** `done` | **Priority:** `[Must]`
 
 **User Story:**
 > As a developer testing timeout handling, I want to configure a simulated delay on any webhook endpoint so that I can verify my client handles slow responses correctly.
@@ -81,7 +85,7 @@ Then  the response is sent immediately with no artificial delay
 
 ## WS-004 — CLI serve command with graceful shutdown
 
-**Status:** `ready` | **Priority:** `[Must]`
+**Status:** `done` | **Priority:** `[Must]`
 
 **User Story:**
 > As a developer, I want to start and stop the webhook simulator from the terminal so that it fits into my local development workflow.
@@ -89,24 +93,35 @@ Then  the response is sent immediately with no artificial delay
 **Acceptance Criteria:**
 ```
 Given the server is running
-When  I send SIGINT (Ctrl+C)
+When  I send SIGINT (Ctrl+C) or SIGTERM
 Then  the server shuts down gracefully, flushes pending logs, and exits
 
 Given the server is running
-When  I specify --port 9090
+When  I specify --addr :9090
 Then  the server listens on port 9090 instead of the default
+
+Given the PORT environment variable is set
+When  the server starts with no --addr flag
+Then  the server listens on the port specified by PORT
 ```
 
-CLI signature: `webhooker serve [--config path] [--port N]`
+CLI invocation: `go run . [--addr :8080] [--stubs ../stubs] [--log-dir logs]`
+
+**Environment Variables:**
+| Variable | Overrides | Default |
+|----------|-----------|---------|
+| `PORT` | `--addr` port | `:8080` |
+| `STUBS_DIR` | `--stubs` | `../stubs` |
+| `LOG_DIR` | `--log-dir` | `logs` |
 
 ---
 
 ## WS-005 — Dynamic request matching
 
-**Status:** `ready` | **Priority:** `[Must]`
+**Status:** `done` | **Priority:** `[Must]`
 
 **User Story:**
-> As a developer, I want webhook endpoints to match on path AND HTTP method so that I can simulate different webhook types on the same base path.
+> As a developer, I want webhook endpoints to match on path, HTTP method, headers, payload, and query parameters so that I can simulate different webhook types with fine-grained routing.
 
 **Acceptance Criteria:**
 ```
@@ -114,7 +129,25 @@ Given two endpoints: GET /webhooks/status and POST /webhooks/status
 When  I send GET /webhooks/status
 Then  the GET endpoint handles it, not the POST one
 
-Given a request to an unconfigured path
+Given an endpoint with header constraints (X-Event: user.created)
+When  a request arrives with a matching header value
+Then  the endpoint matches
+When  a request arrives with a non-matching header value
+Then  it does not match (404)
+
+Given an endpoint with query parameter constraints
+When  a request arrives with matching query params
+Then  the endpoint matches
+When  a request arrives with missing or mismatched query params
+Then  it does not match (404)
+
+Given an endpoint with payload constraints
+When  a request arrives with an exact payload match
+Then  the endpoint matches
+When  a request arrives with a different payload
+Then  it does not match (404)
+
+Given a request that does not match any endpoint
 When  the request arrives
 Then  the server responds with 404 and logs the unmatched request
 ```
@@ -146,11 +179,10 @@ Then  the endpoint returns the configured response.body as normal
 
 **YAML Schema:**
 ```yaml
-webhooks:
-  - name: debug-echo
-    path: /webhooks/echo
-    method: POST
-    response:
-      status_code: 200
-      echo: true
+id: debug-echo
+path: /webhooks/echo
+method: POST
+response:
+  status_code: 200
+  echo: true
 ```

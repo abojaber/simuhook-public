@@ -47,6 +47,71 @@ func main() {
 	logger := mock.NewLogger(*logDir)
 	defer logger.Close()
 
+	stats := mock.NewStatsTracker(50)
+
+	// Build boxed startup banner
+	eps := registry.List()
+	boxWidth := 60
+	endpointLines := make([]string, 0, len(eps))
+	for _, ep := range eps {
+		method := ep.Method
+		if method == "" {
+			method = "ANY "
+		}
+		line := fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID)
+		if len(line)+4 > boxWidth {
+			boxWidth = len(line) + 4
+		}
+		endpointLines = append(endpointLines, line)
+	}
+	// Ensure minimum width for title and config lines
+	minWidth := 60
+	if len("Webhooker Mock Server")+6 > minWidth {
+		minWidth = len("Webhooker Mock Server") + 6
+	}
+	configLines := []string{
+		fmt.Sprintf("  Address:    %s", *addr),
+		fmt.Sprintf("  Stubs:      %s (%d files)", *stubsDir, len(eps)),
+		fmt.Sprintf("  Log dir:    %s", *logDir),
+		fmt.Sprintf("  Admin API:  http://localhost%s/_admin/endpoints", *addr),
+	}
+	for _, l := range configLines {
+		if len(l)+2 > boxWidth {
+			boxWidth = len(l) + 2
+		}
+	}
+	if boxWidth < minWidth {
+		boxWidth = minWidth
+	}
+
+	// If there are no endpoints, account for the no-endpoints line
+	if len(eps) == 0 {
+		boxWidth = max(boxWidth, 50)
+	}
+
+	hline := strings.Repeat("═", boxWidth-2)
+	title := "Webhooker Mock Server"
+	titlePad := (boxWidth - 2 - len(title)) / 2
+
+	fmt.Println()
+	fmt.Printf("╔%s╗\n", hline)
+	fmt.Printf("║%*s%s%*s║\n", titlePad, "", title, boxWidth-2-titlePad-len(title), "")
+	fmt.Printf("╠%s╣\n", hline)
+	for _, l := range configLines {
+		fmt.Printf("║ %-*s║\n", boxWidth-3, l[2:])
+	}
+	fmt.Printf("╠%s╣\n", hline)
+	if len(eps) > 0 {
+		fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints:")
+		for _, line := range endpointLines {
+			fmt.Printf("║    %-*s║\n", boxWidth-6, line[4:])
+		}
+	} else {
+		fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints: (none loaded)")
+	}
+	fmt.Printf("╚%s╝\n", hline)
+	fmt.Println()
+
 	mux := http.NewServeMux()
 
 	// Admin endpoints (not logged)
@@ -195,7 +260,7 @@ func main() {
 
 		// Log every request with full details
 		latency := time.Since(start)
-		logger.Log(mock.LogEntry{
+		entry := mock.LogEntry{
 			Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
 			RequestID:      requestID,
 			Webhook:        webhookName,
@@ -207,7 +272,19 @@ func main() {
 			ResponseStatus: responseStatus,
 			LatencyMs:      float64(latency.Microseconds()) / 1000.0,
 			Matched:        ep != nil,
-		})
+		}
+		logger.Log(entry)
+		stats.RecordRequest(entry)
+
+		// Print per-request line
+		timeStr := time.Now().Format("15:04:05")
+		methodPad := fmt.Sprintf("%-5s", r.Method)
+		statusLine := fmt.Sprintf("%d", responseStatus)
+		label := webhookName
+		if label == "" {
+			label = "unmatched"
+		}
+		fmt.Printf("%s  %s %s → %s  (%s)\n", timeStr, methodPad, r.URL.Path, statusLine, label)
 	})
 
 	done := make(chan os.Signal, 1)
@@ -220,10 +297,6 @@ func main() {
 		}
 	}()
 
-	fmt.Println("Webhooker mock server started")
-	fmt.Println("Admin API: http://localhost" + *addr + "/_admin/endpoints")
-	fmt.Printf("Stubs dir: %s\n", *stubsDir)
-	fmt.Printf("Log dir: %s\n", *logDir)
 	<-done
 	fmt.Println("\nshutting down...")
 }

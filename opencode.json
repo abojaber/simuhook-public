@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md", ".ai/rules.md", ".ai/architecture.md"],
+  "agent": {
+    "ba": {
+      "description": "Business Analyst — requirements, user stories, acceptance criteria for the webhook simulator",
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-6"
+    },
+    "developer": {
+      "description": "Developer — implements the webhook simulator in Go",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6"
+    },
+    "qa": {
+      "description": "QA Engineer — tests the webhook simulator, verifies acceptance criteria",
+      "mode": "subagent",
+      "model": "anthropic/claude-sonnet-4-6"
+    }
+  }
+}

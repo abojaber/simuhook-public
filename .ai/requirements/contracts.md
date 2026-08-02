@@ -4,29 +4,40 @@
 
 ---
 
-## Configuration Schema (YAML)
+## Configuration Schema (YAML per-file stubs)
+
+Each YAML file in the stubs directory defines one endpoint.
 
 ```yaml
-# config.yaml
-port: 8080                     # default listen port
-log_dir: logs                  # directory for log output
+# <endpoint-id>.yaml
+id: string               # unique endpoint ID, used for log file naming
+method: GET | POST | PUT | PATCH | DELETE | HEAD  # empty string = match all
+path: string             # URL path, must start with /
+headers:                 # optional: request header matching conditions
+  X-Signature: "abc123"  # exact value match
+query:                   # optional: query parameter matching conditions
+  token: "abc123"        # exact value match
+payload: "{}"            # optional: request body exact match
 
-webhooks:
-  - name: string               # unique name, used for log file naming
-    path: string               # URL path, must start with /
-    method: GET | POST | PUT | PATCH | DELETE | HEAD
-    match:                     # optional: request matching conditions
-      headers:                 # optional: map of header name to regex/value
-        X-Signature: ".+"
-      query:                   # optional: map of query param to regex/value
-        token: "abc123"
-    response:
-      status: 200              # HTTP status code, default 200
-      headers:                 # optional: response headers
-        Content-Type: application/json
-        X-Request-ID: "{{.UUID}}"
-      body: "{}"               # response body, supports Go template
-      delay: 0s                # artificial delay, default 0
+response:                # singular response (used when responses[] is absent)
+  status_code: 200       # HTTP status code, default 200
+  headers:               # optional: response headers
+    Content-Type: application/json
+    X-Request-ID: "{{.RequestID}}"
+  body: "{}"             # response body, supports Go template
+  delay: 0s              # artificial delay, default 0
+  echo: false            # if true, return request body verbatim overrides body
+  template: false        # if true, process body and headers as Go templates
+
+responses:               # optional: multiple response variants
+  - status_code: 200
+    body: '{"status":"ok"}'
+    weight: 80           # weight for random selection (optional, omit for round-robin)
+    delay: 0s
+  - status_code: 500
+    body: '{"error":"fail"}'
+    weight: 20
+    delay: 2s
 ```
 
 ---
@@ -57,14 +68,85 @@ webhooks:
 ## CLI Signature
 
 ```
-simuhook serve     Start the webhook simulator
-  --config  path    Path to YAML config file (default: config.yaml)
-  --port    N       Listen port (default: 8080)
+go run . [flags]     Start the mock HTTP server
 
-simuhook logs      View delivery logs
-  --webhook name    Filter by webhook name
-  --tail            Follow log output
+Flags:
+  --addr     string   Listen address (default ":8080")
+  --stubs    string   Stubs directory path (default "../stubs")
+  --log-dir  string   Log output directory (default "logs")
 
-simuhook validate  Validate config file syntax
-  --config  path    Path to YAML config file
+Environment variables (override defaults):
+  PORT       string   Listen port (e.g. "9090")
+  STUBS_DIR  string   Stubs directory path
+  LOG_DIR    string   Log output directory
+
+Admin REST API (runtime endpoint management):
+  GET    /_admin/endpoints          List all endpoints
+  POST   /_admin/endpoints          Add an endpoint (JSON body)
+  GET    /_admin/endpoints/{id}     Get a specific endpoint
+  PUT    /_admin/endpoints/{id}     Update a specific endpoint
+  DELETE /_admin/endpoints/{id}     Remove a specific endpoint
+
+---
+
+## Dashboard Output
+
+The CLI prints two types of information on startup and during runtime.
+
+### Startup Banner
+
+Printed once at startup, showing server configuration and loaded endpoints:
+
+```
+╔══════════════════════════════════════════════════════════╗
+║                   Simuhook Mock Server                   ║
+╠══════════════════════════════════════════════════════════╣
+║ Address:    :8080                                        ║
+║ Stubs:      ../stubs (9 files)                           ║
+║ Log dir:    logs                                         ║
+║ Admin API:  http://localhost:8080/_admin/endpoints       ║
+╠══════════════════════════════════════════════════════════╣
+║  Endpoints:                                              ║
+║    GET   /health → health                                ║
+║    POST  /webhooks/echo → echo                           ║
+║    ...                                                   ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+### Per-Request Lines
+
+Printed after each response, one line per request:
+
+```
+HH:MM:SS  METHOD /path → STATUS  (endpoint-id)
+```
+
+Examples:
+```
+14:23:01  GET   /health → 200  (health)
+14:23:15  POST  /nonexistent → 404  (unmatched)
+14:23:20  POST  /webhooks/echo → 200  (echo)
+```
+
+---
+
+## StatsTracker (In-Memory)
+
+Tracked for every request via `mock.StatsTracker`:
+
+| Method | Description |
+|--------|-------------|
+| `NewStatsTracker(maxLogs int)` | Create tracker with ring buffer capacity |
+| `RecordRequest(entry LogEntry)` | Push a log entry, update endpoint hit counter |
+| `Snapshot() StatsSnapshot` | Thread-safe copy of all stats |
+| `Uptime() time.Duration` | Time since tracker creation |
+
+**`StatsSnapshot` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Uptime` | `time.Duration` | Server uptime |
+| `HitCounts` | `map[string]uint64` | Per-endpoint request count |
+| `RecentLogs` | `[]LogEntry` | Last N log entries (in order) |
+| `TotalLogs` | `uint64` | Total log entries recorded |
 ```

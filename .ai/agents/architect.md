@@ -48,6 +48,6 @@ Record significant decisions in `.ai/architecture.md` using this format:
 
 ## Workflow
 1. Understand the requirements from the BA.
-2. Propose an architecture for review.
+2. Propose an architecture for review (submitted via the BA, who obtains stakeholder sign-off). Expect revision loops until the stakeholder approves.
 3. Document decisions and constraints in `.ai/architecture.md`.
 4. Review Developer implementation for architectural compliance.

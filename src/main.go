@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"webhooker/mock"
+	"simuhook/mock"
 )
 
 func main() {
@@ -66,8 +66,8 @@ func main() {
 	}
 	// Ensure minimum width for title and config lines
 	minWidth := 60
-	if len("Webhooker Mock Server")+6 > minWidth {
-		minWidth = len("Webhooker Mock Server") + 6
+	if len("Simuhook Mock Server")+6 > minWidth {
+		minWidth = len("Simuhook Mock Server") + 6
 	}
 	configLines := []string{
 		fmt.Sprintf("  Address:    %s", *addr),
@@ -90,7 +90,7 @@ func main() {
 	}
 
 	hline := strings.Repeat("═", boxWidth-2)
-	title := "Webhooker Mock Server"
+	title := "Simuhook Mock Server"
 	titlePad := (boxWidth - 2 - len(title)) / 2
 
 	fmt.Println()

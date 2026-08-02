@@ -99,7 +99,7 @@ Printed once at startup, showing server configuration and loaded endpoints:
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║                  Webhooker Mock Server                   ║
+║                   Simuhook Mock Server                   ║
 ╠══════════════════════════════════════════════════════════╣
 ║ Address:    :8080                                        ║
 ║ Stubs:      ../stubs (9 files)                           ║

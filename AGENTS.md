@@ -1,10 +1,10 @@
-# Webhooker
+# Simuhook
 
 A mock HTTP server. Define endpoints as YAML files — the server watches the directory, matches incoming requests, and returns configured responses. Changes to stub files are applied live without restart.
 
 ## Project
 
-Webhooker — a Go CLI tool that simulates incoming webhook requests. Users configure webhook endpoints, payloads, headers, and delivery schedules, then the simulator fires them at designated targets so teams can test their integrations without relying on real third-party services.
+Simuhook — a Go CLI tool that simulates incoming webhook requests. Users configure webhook endpoints, payloads, headers, and delivery schedules, then the simulator fires them at designated targets so teams can test their integrations without relying on real third-party services.
 
 ## Tech Stack
 
@@ -15,7 +15,7 @@ Webhooker — a Go CLI tool that simulates incoming webhook requests. Users conf
 
 ## Working Directory
 
-`/Users/abojaber/development/golang/webhooker`
+`/Users/abojaber/developer/simuhook`
 
 ## Conventions
 
@@ -28,7 +28,7 @@ Webhooker — a Go CLI tool that simulates incoming webhook requests. Users conf
 
 ## Commands
 
-- Build: `go build -o webhooker ./src`
+- Build: `go build -o simuhook ./src`
 - Test: `go test -v -race ./src/...`
 - Run: `cd src && go run .`
 - Lint: no lint command configured

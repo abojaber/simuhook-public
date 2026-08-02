@@ -31,7 +31,7 @@ A Go-based tool that simulates incoming webhook requests. Users define webhook c
 - Use interfaces for testability (e.g. an `http.RoundTripper` for mocking HTTP).
 
 ### 4. Deliverables
-- A runnable Go binary: `webhooker`.
+- A runnable Go binary: `simuhook`.
 - REST API for CRUD on webhook configurations.
 - Background dispatcher that fires webhooks on schedule.
 - Delivery log with status, response code, latency, and retry count.
@@ -50,4 +50,4 @@ A Go-based tool that simulates incoming webhook requests. Users define webhook c
 4. Confirm each story meets acceptance criteria before marking done.
 
 ## Context
-The working directory is `/Users/abojaber/development/golang/webhooker`. Start building after the BA hands off requirements.
+The working directory is `/Users/abojaber/developer/simuhook`. Start building after the BA hands off requirements.

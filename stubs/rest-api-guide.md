@@ -1,6 +1,6 @@
 # RESTful API Simulation — Cheat Sheet
 
-> How to simulate RESTful API behavior using Webhooker stub files.
+> How to simulate RESTful API behavior using Simuhook stub files.
 > Each pattern references a working example in this directory.
 
 ---
@@ -255,7 +255,7 @@ Delays can be set on the singular `response` or per-variant inside `responses[]`
 
 ## Path Limitation
 
-Webhooker uses **exact path matching**. A stub for `/api/users` will **not** match `/api/users/123` or `/api/users/123/orders`.
+Simuhook uses **exact path matching**. A stub for `/api/users` will **not** match `/api/users/123` or `/api/users/123/orders`.
 
 **Workarounds:**
 
@@ -263,7 +263,7 @@ Webhooker uses **exact path matching**. A stub for `/api/users` will **not** mat
 |----------|-----|
 | Define per-resource stubs | Create separate stubs for `/api/users/1`, `/api/users/2`, etc. |
 | Wildcard catch-all | Use a single broad path with method matching (but lose path info) |
-| Accept the limitation | Use Webhooker for testing fixed known paths — ideal for webhook simulations, health checks, and predefined API contracts |
+| Accept the limitation | Use Simuhook for testing fixed known paths — ideal for webhook simulations, health checks, and predefined API contracts |
 
 > If you need path-parameter matching (e.g., `/api/users/:id`), define one stub per expected ID or use templates to differentiate responses via body/headers.
 

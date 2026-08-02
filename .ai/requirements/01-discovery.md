@@ -20,7 +20,7 @@
 ## Inferred Constraints
 
 - Config is file-based (YAML), not a database. No migrations, no SQL.
-- CLI-first means subcommands: `webhooker serve`, `webhooker config`, `webhooker logs`.
+- CLI-first means subcommands: `simuhook serve`, `simuhook config`, `simuhook logs`.
 - Fully dynamic webhooks mean a template engine for payloads (e.g., Go templates).
 - Logs as files means structured logging (JSON lines) for grep-ability.
 

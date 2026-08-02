@@ -14,11 +14,11 @@
 **Acceptance Criteria:**
 ```
 Given a valid config.yaml file defining one or more webhook endpoints
-When  I run `webhooker serve --config config.yaml`
+When  I run `simuhook serve --config config.yaml`
 Then  the server starts and exposes all defined endpoints
 
 Given a config.yaml with an invalid schema
-When  I run `webhooker serve --config config.yaml`
+When  I run `simuhook serve --config config.yaml`
 Then  the CLI exits with a descriptive validation error and a non-zero exit code
 ```
 
@@ -97,7 +97,7 @@ When  I specify --port 9090
 Then  the server listens on port 9090 instead of the default
 ```
 
-CLI signature: `webhooker serve [--config path] [--port N]`
+CLI signature: `simuhook serve [--config path] [--port N]`
 
 ---
 

@@ -57,14 +57,14 @@ webhooks:
 ## CLI Signature
 
 ```
-webhooker serve     Start the webhook simulator
+simuhook serve     Start the webhook simulator
   --config  path    Path to YAML config file (default: config.yaml)
   --port    N       Listen port (default: 8080)
 
-webhooker logs      View delivery logs
+simuhook logs      View delivery logs
   --webhook name    Filter by webhook name
   --tail            Follow log output
 
-webhooker validate  Validate config file syntax
+simuhook validate  Validate config file syntax
   --config  path    Path to YAML config file
 ```

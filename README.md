@@ -1,4 +1,4 @@
-# Webhooker
+# Simuhook
 
 A mock HTTP server. Define endpoints as YAML files — the server watches the directory, matches incoming requests, and returns configured responses. Changes to stub files are applied live without restart.
 

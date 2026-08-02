@@ -55,4 +55,4 @@ When you find a bug, report it with:
 5. Re-test fixes and sign off when all ACs pass.
 
 ## Context
-Working directory is `/Users/abojaber/development/golang/webhooker`. The Developer writes the code; you verify it.
+Working directory is `/Users/abojaber/developer/simuhook`. The Developer writes the code; you verify it.

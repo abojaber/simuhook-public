@@ -1,4 +1,4 @@
-module webhooker
+module simuhook
 
 go 1.26.4
 

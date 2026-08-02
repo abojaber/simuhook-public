@@ -6,9 +6,9 @@ A Go CLI that simulates incoming webhook requests. Users define webhook configur
 
 ## Commands
 
-- `webhooker serve` — Start the HTTP server
-- `webhooker config` — Manage webhook configurations
-- `webhooker logs` — View delivery logs
+- `simuhook serve` — Start the HTTP server
+- `simuhook config` — Manage webhook configurations
+- `simuhook logs` — View delivery logs
 
 ## Components
 
@@ -56,7 +56,7 @@ stubs/                   # YAML stub definitions
 - `net/http` (stdlib) — no external HTTP framework
 
 ### Deliverables
-- Runnable Go binary: `webhooker`
+- Runnable Go binary: `simuhook`
 - REST API for CRUD on webhook configurations
 - Background dispatcher that fires webhooks on schedule
 - Delivery log with status, response code, latency, and retry count

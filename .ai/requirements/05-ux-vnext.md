@@ -158,13 +158,43 @@ And   pressing c or esc clears both the chip and the footer filter text
 
 ---
 
-### UXR-008 — Feed row expansion (`enter`) `[Could]` — DEFERRED
+### UXR-008 — Feed row expansion (`enter`) `[Could]` — PHASE 5 (done)
 
 **Story:** As a developer, I want to press enter on a feed row to see its headers/body/query detail.
 
-**AC:** (from contract §9)
+**Status:** `verified` | **Phase:** 5 | **Implemented:** `678bd96` | **QA:** verified 2026-08-02 (all 9 ACs PASS, no bugs) | **Design:** approved by stakeholder 2026-08-02 (all 6 sign-off items ✅)
 
-**Blocked on:** design decision for viewport row selection (the contract banned list/textinput widgets). Needs a lightweight cursor-overlay approach on the viewport content. Do NOT schedule until UXR-001..006 land and the stakeholder approves the selection approach.
+**Design decision (resolves the deferral blocker):**
+
+The contract banned list/textinput widgets. Resolution: **selection is derived from the viewport position — the selected row is the one at the top visible line (`view.YOffset`)**. No cursor keys, no separate widget, no key conflicts: the existing scroll keys move the highlight implicitly, and `enter` (which is currently unused outside prompt mode — it falls through to the viewport, which ignores it) toggles expansion. Expansion is keyed by `LogEntry.RequestID` (unique) so it survives ticks while the entry remains in the ring.
+
+- Model state: `expandedID string` (RequestID, `""` = none); per-render `feedLineToEntry []int` mapping each content line to its entry index in the displayed (filtered) slice.
+- Selection: `selectedIdx = feedLineToEntry[view.YOffset]` → `displayed[selectedIdx].RequestID`. Highlight rendered on that line (`▍` marker + background tint).
+- `enter` (not prompting): toggle — if selected entry's RequestID == `expandedID`, clear it; else set it. Pause live-follow and scroll so the expanded summary line is at the top (detail reads below). Collapse resumes live-follow.
+- Auto-clear: after each `renderFeed`, if `expandedID` is not in the displayed slice (scrolled out of ring / filtered out / cleared), clear it.
+- Detail rendering (muted, `│` gutter, width-truncated): `request_id`, `matched`, full `timestamp`, `headers:` (one per line), `query:` (one per line), `body:`.
+
+**AC:**
+```
+Given the feed has entries and no filter excludes them
+When  I press enter while not in prompt mode
+Then  the row at the top visible line expands, showing request_id, matched,
+      timestamp, headers, query, and body; the view scrolls so the summary
+      line is at the top and live-follow pauses
+Given a row is expanded
+When  I press enter again
+Then  it collapses to a single line and live-follow resumes
+Given the expanded entry remains in the ring
+When  ticks arrive
+Then  the expansion stays open (keyed by RequestID)
+Given the expanded entry leaves the ring or stops matching the filter
+When  the next tick renders
+Then  the expansion clears automatically
+Given the feed is empty or fully filtered
+When  I press enter
+Then  nothing changes (no panic)
+And   enter while the filter prompt is active still applies the filter (unchanged)
+```
 
 ---
 
@@ -176,7 +206,7 @@ And   pressing c or esc clears both the chip and the footer filter text
 | **2** | UXR-003, UXR-004 | `L` pause + `e` collapse (Model state + viewport resize) | medium — viewport re-sizing is the fiddly part | **DONE `ed288ac`** |
 | **3** | UXR-005 | Layout adaptation (auto-collapse, width truncation) | medium — interacts with phase 2 sizes | **DONE `34bcd90`** |
 | **4** | UXR-006, UXR-007 | Prompt polish + filter chip | low | **DONE `6835a18`** |
-| **5** | UXR-008 | Row expansion | deferred — needs design decision |
+| **5** | UXR-008 | Row expansion | medium — selection derived from viewport; detail rendering | **DONE `678bd96`** |
 
 **Dependency:** phase 3's `headerHeight()`/viewport logic must incorporate phase 2's collapse state — design `headerHeight()` once, in phase 2, to be aware of both.
 

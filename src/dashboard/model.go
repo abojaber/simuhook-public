@@ -43,6 +43,12 @@ type Model struct {
 
 	// UXR-005 — tracks whether endpoints were auto-collapsed (short terminal).
 	autoCollapsed bool
+
+	// UXR-008 — feed row expansion.
+	expandedID      string          // RequestID of expanded row; "" = none. One at a time.
+	feedEntries     []mock.LogEntry // displayed (filtered) entries backing current content
+	feedLineToEntry []int           // content line -> index into feedEntries, or -1
+	feedEntryToLine []int           // feedEntries index -> content line of its summary line
 }
 
 func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
@@ -135,6 +141,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.view.Height = vpHeight
 		m.syncFeed()
+		// UXR-008 — re-pin expanded summary after resize.
+		if line := m.expandedSummaryLine(); line >= 0 {
+			m.view.SetYOffset(line)
+		}
 		return m, nil
 	}
 
@@ -185,6 +195,33 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.promptErr = "invalid status: " + BadStatusToken(m.prompt)
 		return m, nil
 
+	// UXR-008 — toggle expansion of the row at the top visible line.
+	case s == "enter" && !m.prompting:
+		sel := m.selectedIdx()
+		if sel < 0 {
+			return m, nil
+		}
+		id := m.feedEntries[sel].RequestID
+		if id == "" {
+			return m, nil
+		}
+		if id == m.expandedID {
+			// Collapse: resume live-follow and re-anchor to bottom.
+			m.expandedID = ""
+			m.liveFollow = true
+			m.renderFeed()
+			m.view.GotoBottom()
+			return m, nil
+		}
+		// Expand (single expanded row at a time).
+		m.expandedID = id
+		m.liveFollow = false
+		m.renderFeed()
+		if line := m.expandedSummaryLine(); line >= 0 {
+			m.view.SetYOffset(line)
+		}
+		return m, nil
+
 	// Escape: cancel prompt or clear filter.
 	case s == "esc":
 		if m.prompting {
@@ -192,17 +229,25 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prompt = ""
 			m.promptErr = ""
 		} else {
+			collapsed := m.collapseExpansion()
 			m.filter = Filter{}
 			m.renderFeed()
 			m.syncFeed()
+			if collapsed {
+				m.view.GotoBottom()
+			}
 		}
 		return m, nil
 
 	// 'c' clears the filter when not prompting.
 	case s == "c" && !m.prompting:
+		collapsed := m.collapseExpansion()
 		m.filter = Filter{}
 		m.renderFeed()
 		m.syncFeed()
+		if collapsed {
+			m.view.GotoBottom()
+		}
 		return m, nil
 
 	// Toggle help overlay.
@@ -267,21 +312,93 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// syncFeed re-anchors the viewport to the bottom if live-follow is enabled
-// and the user was already at the bottom; when paused, the content still
-// updates but the scroll offset is preserved (the viewport's YOffset is
-// unchanged by SetContent so long as the line count does not shrink).
+// selectedIdx returns the feedEntries index of the row at the top visible line.
+// Returns -1 when there is no valid entry at YOffset (blank line, placeholder,
+// bounds exceeded, or nil maps before first render).
+func (m Model) selectedIdx() int {
+	if m.feedLineToEntry == nil {
+		return -1
+	}
+	y := m.view.YOffset
+	if y < 0 || y >= len(m.feedLineToEntry) {
+		return -1
+	}
+	idx := m.feedLineToEntry[y]
+	if idx < 0 || idx >= len(m.feedEntries) {
+		return -1
+	}
+	return idx
+}
+
+// expandedIdx returns the index of m.expandedID in feedEntries, or -1 if not
+// found or not expanded.
+func (m Model) expandedIdx() int {
+	if m.expandedID == "" {
+		return -1
+	}
+	for i, e := range m.feedEntries {
+		if e.RequestID == m.expandedID {
+			return i
+		}
+	}
+	return -1
+}
+
+// expandedSummaryLine returns the content line number of the expanded entry's
+// summary line, or -1 if nothing is expanded or the entry is not in the current
+// displayed set.
+func (m Model) expandedSummaryLine() int {
+	idx := m.expandedIdx()
+	if idx < 0 {
+		return -1
+	}
+	if m.feedEntryToLine == nil || idx >= len(m.feedEntryToLine) {
+		return -1
+	}
+	return m.feedEntryToLine[idx]
+}
+
+// collapseExpansion clears the expanded row and resumes live-follow. Returns
+// true if there was an expansion to clear.
+func (m *Model) collapseExpansion() bool {
+	if m.expandedID == "" {
+		return false
+	}
+	m.expandedID = ""
+	m.liveFollow = true
+	return true
+}
+
+// syncFeed re-anchors the viewport to the bottom if live-follow is enabled and
+// the user was already at the bottom. When an entry is expanded, uses relative
+// delta correction so the expanded row's summary stays at its offset.
 func (m *Model) syncFeed() {
 	atBottom := m.view.AtBottom()
+	prevLine := m.expandedSummaryLine()
+	prevOffset := m.view.YOffset
 	m.renderFeed()
-	if atBottom && m.liveFollow {
+	switch {
+	case atBottom && m.liveFollow:
 		m.view.GotoBottom()
+	case prevLine >= 0:
+		if newLine := m.expandedSummaryLine(); newLine >= 0 {
+			m.view.SetYOffset(prevOffset + (newLine - prevLine))
+		}
 	}
 }
 
-// renderFeed builds the feed content from recent logs and sets it on the viewport.
+// renderFeed builds the feed content from recent logs and sets it on the
+// viewport. If the expanded entry is no longer in the ring or no longer
+// matches the active filter, the expansion is auto-cleared.
 func (m *Model) renderFeed() {
-	m.view.SetContent(m.buildFeed())
+	fr := m.buildFeed(-1)
+	m.feedEntries = fr.entries
+	m.feedLineToEntry = fr.lineToEntry
+	m.feedEntryToLine = fr.entryToLine
+	m.view.SetContent(fr.content)
+	if m.expandedID != "" && !fr.expandedHit {
+		m.expandedID = ""
+	}
 }
 
 // headerHeight returns the number of rows the header occupies: the title,

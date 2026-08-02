@@ -111,7 +111,7 @@ Leveraging `bubbletea` or similar Go TUI framework. The existing `StatsTracker` 
 
 ## TGR-03 — Stub parsing and registry concurrency
 
-**Status:** `draft` | **Priority:** `[Could]`
+**Status:** `done` | **Priority:** `[Could]`
 
 **Story:**
 > As a developer, I want confidence that YAML edge cases are handled and the registry is safe under concurrent access.
@@ -123,6 +123,8 @@ Leveraging `bubbletea` or similar Go TUI framework. The existing `StatsTracker` 
 - `Register.Update`/`Remove` concurrent with `Match` — no data race under `-race`
 
 **Estimated tests:** 4 new test functions
+
+**Implemented:** `src/mock/registry_test.go` (3 concurrency tests) + 2 stub tests in `src/mock/stub_test.go`. Full suite: 78 tests, all pass under `go test -race`.
 
 ---
 

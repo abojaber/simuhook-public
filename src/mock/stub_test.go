@@ -303,3 +303,58 @@ responses:
 		t.Fatalf("expected template body, got %q", string(ep.Responses[1].Body))
 	}
 }
+
+func TestParseStubFile_WithYmlExtension(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "endpoint.yml")
+	os.WriteFile(path, []byte(`
+id: yml-ep
+method: GET
+path: /yml
+response:
+  status_code: 200
+  body: ok
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error for .yml file: %v", err)
+	}
+	if ep.ID != "yml-ep" {
+		t.Fatalf("expected yml-ep, got %s", ep.ID)
+	}
+}
+
+func TestParseStubFile_IgnoresUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "unknown.yaml")
+	os.WriteFile(path, []byte(`
+id: unknown-ep
+method: POST
+path: /unknown
+unexpected_top_level: whatever
+headers:
+  X-Key: val
+unknown_nested:
+  foo: bar
+response:
+  status_code: 200
+  body: ok
+  custom_future_field:
+    a: 1
+`), 0644)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unknown fields should be ignored, got error: %v", err)
+	}
+	if ep.ID != "unknown-ep" {
+		t.Fatalf("expected unknown-ep, got %s", ep.ID)
+	}
+	if ep.Headers["X-Key"] != "val" {
+		t.Fatalf("expected known header to still parse, got %v", ep.Headers)
+	}
+	if ep.Response.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", ep.Response.StatusCode)
+	}
+}

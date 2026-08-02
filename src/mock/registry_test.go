@@ -1,7 +1,9 @@
 package mock
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -122,5 +124,52 @@ func TestRegistry_ListConcurrentWithMatch(t *testing.T) {
 
 	if len(r.List()) != 20 {
 		t.Fatalf("expected 20 endpoints, got %d", len(r.List()))
+	}
+}
+
+// TestRegistry_List_JSONRoundTrip verifies listing endpoints through
+// JSON marshal/unmarshal preserves all endpoint IDs.
+func TestRegistry_List_JSONRoundTrip(t *testing.T) {
+	r := NewRegistry()
+	r.Add(&Endpoint{ID: "ep1", Method: "GET", Path: "/one", Response: Response{StatusCode: 200}})
+	r.Add(&Endpoint{ID: "ep2", Method: "POST", Path: "/two", Response: Response{StatusCode: 201}})
+
+	eps := r.List()
+	data, err := json.Marshal(eps)
+	if err != nil {
+		t.Fatalf("marshal endpoints: %v", err)
+	}
+
+	var decoded []Endpoint
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal endpoints: %v\n%s", err, data)
+	}
+	if len(decoded) != 2 {
+		t.Fatalf("expected 2 endpoints in JSON, got %d", len(decoded))
+	}
+
+	ids := map[string]bool{}
+	for _, ep := range decoded {
+		ids[ep.ID] = true
+	}
+	if !ids["ep1"] || !ids["ep2"] {
+		t.Fatalf("expected ep1 and ep2 in JSON, got %v", ids)
+	}
+}
+
+// TestRegistry_List_IncludesCreatedAt verifies the "created_at" field is
+// present in serialized JSON so consumers can parse endpoint metadata.
+func TestRegistry_List_IncludesCreatedAt(t *testing.T) {
+	r := NewRegistry()
+	ep := &Endpoint{ID: "with-ts", Method: "GET", Path: "/ts"}
+	r.Add(ep)
+
+	eps := r.List()
+	data, err := json.Marshal(eps)
+	if err != nil {
+		t.Fatalf("marshal endpoints: %v", err)
+	}
+	if !strings.Contains(string(data), `"created_at"`) {
+		t.Fatalf("expected created_at field in JSON, got %s", data)
 	}
 }

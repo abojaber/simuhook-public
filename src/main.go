@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -78,6 +77,9 @@ func main() {
 	// Redirect standard log output to a file when TUI is enabled to avoid
 	// corrupting the dashboard screen (e.g. watcher reload messages).
 	if tuiEnabled {
+		if err := os.MkdirAll(*logDir, 0o755); err != nil {
+			log.Fatalf("create log dir: %v", err)
+		}
 		logf, err := os.OpenFile(filepath.Join(*logDir, "server.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			log.Fatalf("open server log: %v", err)
@@ -222,113 +224,19 @@ func main() {
 	})
 
 	// Webhook handler — matched & unmatched requests are logged
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		requestID := mock.NewRequestID()
-
-		body := make([]byte, 0)
-		if r.Body != nil {
-			body, _ = io.ReadAll(r.Body)
-			defer r.Body.Close()
-		}
-		headers := make(map[string]string)
-		for k := range r.Header {
-			headers[k] = r.Header.Get(k)
-		}
-		query := make(map[string]string)
-		for k := range r.URL.Query() {
-			query[k] = r.URL.Query().Get(k)
-		}
-
-		ep := registry.Match(r.Method, r.URL.Path, headers, query, body)
-
-		var (
-			responseStatus int
-			webhookName    string
-			responseBody   []byte
-		)
-
-		if ep == nil {
-			responseStatus = http.StatusNotFound
-			responseBody = []byte(`{"error":"no matching endpoint"}`)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(responseStatus)
-			w.Write(responseBody)
-		} else {
-			webhookName = ep.ID
-
-			// Pick response variant (singular or from responses array)
-			resp := mock.PickResponse(ep)
-
-			// Build template data (needed for both body and headers if template: true)
-			var tmplData *mock.TemplateData
-			if resp.Template {
-				tmplData = mock.BuildTemplateData(requestID, r.Method, r.URL.Path, body)
-			}
-
-			if resp.Delay > 0 {
-				time.Sleep(resp.Delay)
-			}
-
-			// Set response headers (with optional template execution)
-			for k, v := range resp.Headers {
-				if resp.Template {
-					v = mock.ExecuteHeaderTemplate(v, tmplData, headers, query)
-				}
-				w.Header().Set(k, v)
-			}
-
-			responseStatus = resp.StatusCode
-			if responseStatus == 0 {
-				responseStatus = http.StatusOK
-			}
-			w.WriteHeader(responseStatus)
-
-			// Echo mode takes precedence over everything
-			if resp.Echo {
-				responseBody = body
-			} else if resp.Template && len(resp.Body) > 0 {
-				rendered := mock.ExecuteBodyTemplate(string(resp.Body), tmplData, headers, query)
-				responseBody = []byte(rendered)
-			} else {
-				responseBody = resp.Body
-			}
-
-			if len(responseBody) > 0 {
-				w.Write(responseBody)
-			}
-		}
-
-		// Log every request with full details
-		latency := time.Since(start)
-		entry := mock.LogEntry{
-			Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
-			RequestID:      requestID,
-			Webhook:        webhookName,
-			Method:         r.Method,
-			Path:           r.URL.Path,
-			Headers:        headers,
-			Body:           string(body),
-			Query:          query,
-			ResponseStatus: responseStatus,
-			LatencyMs:      float64(latency.Microseconds()) / 1000.0,
-			Matched:        ep != nil,
-		}
-		logger.Log(entry)
-		stats.RecordRequest(entry)
-
-		// Print per-request line (only when TUI is disabled)
-		if !tuiEnabled {
-			timeStr := time.Now().Format("15:04:05")
-			methodPad := fmt.Sprintf("%-5s", r.Method)
-			statusLine := fmt.Sprintf("%d", responseStatus)
-			label := webhookName
-			if label == "" {
-				label = "unmatched"
-			}
-			fmt.Printf("%s  %s %s → %s  (%s)\n", timeStr, methodPad, r.URL.Path, statusLine, label)
-		}
-	})
+	observers := []func(mock.LogEntry){
+		func(e mock.LogEntry) { _ = logger.Log(e) },
+		stats.RecordRequest,
+	}
+	if !tuiEnabled {
+		observers = append(observers, func(e mock.LogEntry) {
+			fmt.Println(mock.FormatRequestLine(e))
+		})
+	}
+	mux.Handle("/", mock.NewHandler(mock.HandlerConfig{
+		Registry:  registry,
+		Observers: observers,
+	}))
 
 	srv := &http.Server{Addr: *addr, Handler: mux}
 

@@ -28,7 +28,7 @@ src/
 └── mock/
     ├── types.go          # Endpoint, Response structs
     ├── registry.go       # Store, match, CRUD endpoints (thread-safe)
-    ├── server.go         # mock.Server HTTP handler (see WS-017 note)
+    ├── handler.go        # Handler: single request-handling source of truth (WS-017)
     ├── stub.go           # YAML stub file parser
     ├── logger.go         # LogEntry, JSON Lines logging
     ├── stats.go          # StatsTracker: counts, ring, latency stats, Notify
@@ -79,6 +79,15 @@ All other paths are the mock surface: requests are matched against stubs and ans
 - **Keys:** `q`/`ctrl+c` quit, `r` refresh, `/`/`f` filter prompt, `enter` apply, `esc` cancel/clear, `c` clear, `?` help; scrolling via viewport DefaultKeyMap (`↑/k`, `↓/j`, `pgup/pgdn`, `g/G`).
 - **Startup order:** `net.Listen` → registry/watcher/load → TUI decision → logger + log redirect → banner (non-TUI only) → mux/server → `dashboard.Run` (blocks) → `srv.Shutdown`.
 
+### WS-017 — Single request handler (`[Could]`, done)
+- **Problem:** three handler families existed — main.go's inline closure (shipped, 0% tested), `mock.Server` (dead code, referenced only by `server_test.go`, 2 real bugs), and 11 self-referential mini-handlers inside `mock_test.go` that tested their own code. The shipped matching path had no tests.
+- **Decision (Option C):** extract to `mock.NewHandler(HandlerConfig) http.Handler` as the single source of truth; `main` keeps listener/mux/signals/shutdown/TUI. `mock.Server`/`NewServer`/`Start`/`Stop`/`MarshalEndpoints` and `server.go` deleted; the 11 self-testing tests deleted.
+- **`HandlerConfig{Registry, Observers []func(LogEntry), Now}`:** observers are called synchronously after the response is written; `stats.RecordRequest` binds as a method value, `logger.Log` needs a 1-line closure. `Registry` is required (nil panics in `NewHandler`). `Now` is a test seam (defaults to `time.Now`).
+- **`FormatRequestLine(LogEntry)`** renders the WS-016 one-line summary; it re-localizes the UTC `LogEntry.Timestamp` so the displayed clock stays LOCAL.
+- **Locked semantics (shipped main.go behavior wins over dead-code bugs):** response-header templates receive `headers, query` (was `nil, nil` → empty renders); template data built BEFORE the delay sleep (`{{.Now}}` = request-receipt time); unmatched 404 returns explicit `Content-Type: application/json`; `LatencyMs` includes `resp.Delay`; `r.Body` nil-guarded; `PickResponse`'s pointer is never written through.
+- **TUI log-dir fix:** `os.MkdirAll(*logDir)` before opening `server.log` in TUI mode (pre-existing WS-010b bug — `NewLogger` creates the dir lazily, so a fresh `--log-dir` crashed TUI startup).
+- **Coverage:** mock 74.4% → 81.4% (dead code removed, shipped path now covered for the first time); `go vet` clean (4 pre-existing findings lived in the deleted self-testing tests).
+
 ### Stubs and matching
 - YAML stubs support: method, path, query match, header match, payload match, response status/body/headers, `delay`, `echo`, `template` modes, and multiple response variants with weights (round-robin on equal weight).
 - Hot reload via fsnotify; every reload is logged.
@@ -98,4 +107,6 @@ All other paths are the mock surface: requests are matched against stubs and ans
 
 ## Open Items
 
-- **WS-017** (`[Could]`, backlog): duplicate `mock.Server` handler — referenced only from `server_test.go`; main.go uses its own inline handler with logging/stats. Two divergent implementations of the core matching path. Options: unify into `mock.Server` or delete it and test the real handler.
+- **WS-017b** (`[Could]`, backlog): extract the admin REST API (`/_admin/endpoints`) from main.go into `mock.NewAdminHandler(registry) http.Handler` with unit tests (deferred from WS-017 by stakeholder).
+- **WS-011** (`[Could]`, backlog): webhook forwarding / proxy mode.
+- **WS-012** (`[Could]`, backlog): WebSocket / SSE endpoint simulation.

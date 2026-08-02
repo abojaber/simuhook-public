@@ -128,7 +128,7 @@ Then  all recent entries are shown again
 
 ## WS-017 — Single source of truth for the request-handling path (Architect finding B4)
 
-**Status:** `ready` | **Priority:** `[Could]`
+**Status:** `done` | **Priority:** `[Could]` | **Implemented:** commit `WS-017` (handler.go), `QA: verified`
 
 **Story:**
 > As a developer, I want a single source of truth for the request-handling path so that the shipped handler and any test doubles do not drift.
@@ -176,6 +176,12 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
 - Step 3 manual smoke: `go run . --tui off` + curl matched/unmatched, then `--tui on` (counts increment, `q` exits cleanly).
 - `go vet ./...` is clean only from step 5 onward (4 pre-existing findings live in deleted tests).
 - `rg -n 'NewServer\|mock\.Server\|MarshalEndpoints' src/` ⇒ no hits after step 4.
+
+### QA findings during verification (2026-08-02)
+
+1. **TUI startup fails when `--log-dir` is a fresh path** — pre-existing (introduced WS-010b, present on `e32fb72`), NOT a WS-017 regression. `mock.NewLogger` creates the dir lazily on first `Log()`, but the TUI branch opened `<log-dir>/server.log` up front. **Fixed in WS-017:** `os.MkdirAll(*logDir, 0o755)` before opening. Re-verified: fresh dir auto-created, `server.log` written, HTTP 200, `q` exits rc=0.
+2. "No shutdown message on SIGINT" — **capture artifact**, not a bug. `shutting down...` is printed (verified under real PTY).
+3. "`q` doesn't exit" in synthetic PTY harness — **harness artifact** (zombie-reaping confusion in `os.kill(pid,0)`; dashboard package byte-identical to signed-off WS-010c; `waitpid` confirms clean rc=0 exit).
 
 ### Implementation steps
 

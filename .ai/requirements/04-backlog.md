@@ -128,7 +128,7 @@ Then  all recent entries are shown again
 
 ## WS-017 — Single source of truth for the request-handling path (Architect finding B4)
 
-**Status:** `done` | **Priority:** `[Could]` | **Implemented:** commit `WS-017` (handler.go), `QA: verified`
+**Status:** `done` | **Priority:** `[Could]` | **Implemented:** `818ffdb` | **QA:** verified
 
 **Story:**
 > As a developer, I want a single source of truth for the request-handling path so that the shipped handler and any test doubles do not drift.

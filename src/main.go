@@ -11,10 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+	"simuhook/dashboard"
 	"simuhook/mock"
 )
 
@@ -22,7 +25,16 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	stubsDir := flag.String("stubs", "../stubs", "stubs directory")
 	logDir := flag.String("log-dir", "logs", "log directory")
+	tui := flag.String("tui", "auto", "dashboard mode: auto|on|off")
+	recent := flag.Int("recent", 50, "recent log ring buffer size")
 	flag.Parse()
+
+	if *tui != "auto" && *tui != "on" && *tui != "off" {
+		log.Fatalf("invalid --tui value %q: must be auto, on, or off", *tui)
+	}
+	if *recent <= 0 {
+		log.Fatalf("invalid --recent %d: must be > 0", *recent)
+	}
 
 	if v := os.Getenv("PORT"); v != "" && *addr == ":8080" {
 		*addr = ":" + v
@@ -51,73 +63,95 @@ func main() {
 	watcher.Watch()
 	defer watcher.Close()
 
+	// Decide whether to use the dashboard TUI
+	tuiEnabled := *tui == "on" || (*tui == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
+	termWidth, termHeight := 80, 24
+	if tuiEnabled {
+		if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+			termWidth, termHeight = w, h
+		}
+	}
+
 	logger := mock.NewLogger(*logDir)
 	defer logger.Close()
 
-	stats := mock.NewStatsTracker(50)
-
-	// Build boxed startup banner
-	eps := registry.List()
-	boxWidth := 60
-	endpointLines := make([]string, 0, len(eps))
-	for _, ep := range eps {
-		method := ep.Method
-		if method == "" {
-			method = "ANY "
+	// Redirect standard log output to a file when TUI is enabled to avoid
+	// corrupting the dashboard screen (e.g. watcher reload messages).
+	if tuiEnabled {
+		logf, err := os.OpenFile(filepath.Join(*logDir, "server.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			log.Fatalf("open server log: %v", err)
 		}
-		line := fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID)
-		if len(line)+4 > boxWidth {
-			boxWidth = len(line) + 4
-		}
-		endpointLines = append(endpointLines, line)
-	}
-	// Ensure minimum width for title and config lines
-	minWidth := 60
-	if len("Simuhook Mock Server")+6 > minWidth {
-		minWidth = len("Simuhook Mock Server") + 6
-	}
-	configLines := []string{
-		fmt.Sprintf("  Address:    %s", *addr),
-		fmt.Sprintf("  Stubs:      %s (%d files)", *stubsDir, len(eps)),
-		fmt.Sprintf("  Log dir:    %s", *logDir),
-		fmt.Sprintf("  Admin API:  http://localhost%s/_admin/endpoints", *addr),
-	}
-	for _, l := range configLines {
-		if len(l)+2 > boxWidth {
-			boxWidth = len(l) + 2
-		}
-	}
-	if boxWidth < minWidth {
-		boxWidth = minWidth
+		defer logf.Close()
+		log.SetOutput(logf)
 	}
 
-	// If there are no endpoints, account for the no-endpoints line
-	if len(eps) == 0 {
-		boxWidth = max(boxWidth, 50)
-	}
+	stats := mock.NewStatsTracker(*recent)
 
-	hline := strings.Repeat("═", boxWidth-2)
-	title := "Simuhook Mock Server"
-	titlePad := (boxWidth - 2 - len(title)) / 2
-
-	fmt.Println()
-	fmt.Printf("╔%s╗\n", hline)
-	fmt.Printf("║%*s%s%*s║\n", titlePad, "", title, boxWidth-2-titlePad-len(title), "")
-	fmt.Printf("╠%s╣\n", hline)
-	for _, l := range configLines {
-		fmt.Printf("║ %-*s║\n", boxWidth-3, l[2:])
-	}
-	fmt.Printf("╠%s╣\n", hline)
-	if len(eps) > 0 {
-		fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints:")
-		for _, line := range endpointLines {
-			fmt.Printf("║    %-*s║\n", boxWidth-6, line[4:])
+	// Build boxed startup banner (only when TUI is disabled)
+	if !tuiEnabled {
+		eps := registry.List()
+		boxWidth := 60
+		endpointLines := make([]string, 0, len(eps))
+		for _, ep := range eps {
+			method := ep.Method
+			if method == "" {
+				method = "ANY "
+			}
+			line := fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID)
+			if len(line)+4 > boxWidth {
+				boxWidth = len(line) + 4
+			}
+			endpointLines = append(endpointLines, line)
 		}
-	} else {
-		fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints: (none loaded)")
+		// Ensure minimum width for title and config lines
+		minWidth := 60
+		if len("Simuhook Mock Server")+6 > minWidth {
+			minWidth = len("Simuhook Mock Server") + 6
+		}
+		configLines := []string{
+			fmt.Sprintf("  Address:    %s", *addr),
+			fmt.Sprintf("  Stubs:      %s (%d files)", *stubsDir, len(eps)),
+			fmt.Sprintf("  Log dir:    %s", *logDir),
+			fmt.Sprintf("  Admin API:  http://localhost%s/_admin/endpoints", *addr),
+		}
+		for _, l := range configLines {
+			if len(l)+2 > boxWidth {
+				boxWidth = len(l) + 2
+			}
+		}
+		if boxWidth < minWidth {
+			boxWidth = minWidth
+		}
+
+		// If there are no endpoints, account for the no-endpoints line
+		if len(eps) == 0 {
+			boxWidth = max(boxWidth, 50)
+		}
+
+		hline := strings.Repeat("═", boxWidth-2)
+		title := "Simuhook Mock Server"
+		titlePad := (boxWidth - 2 - len(title)) / 2
+
+		fmt.Println()
+		fmt.Printf("╔%s╗\n", hline)
+		fmt.Printf("║%*s%s%*s║\n", titlePad, "", title, boxWidth-2-titlePad-len(title), "")
+		fmt.Printf("╠%s╣\n", hline)
+		for _, l := range configLines {
+			fmt.Printf("║ %-*s║\n", boxWidth-3, l[2:])
+		}
+		fmt.Printf("╠%s╣\n", hline)
+		if len(eps) > 0 {
+			fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints:")
+			for _, line := range endpointLines {
+				fmt.Printf("║    %-*s║\n", boxWidth-6, line[4:])
+			}
+		} else {
+			fmt.Printf("║  %-*s║\n", boxWidth-4, "Endpoints: (none loaded)")
+		}
+		fmt.Printf("╚%s╝\n", hline)
+		fmt.Println()
 	}
-	fmt.Printf("╚%s╝\n", hline)
-	fmt.Println()
 
 	mux := http.NewServeMux()
 
@@ -283,21 +317,20 @@ func main() {
 		logger.Log(entry)
 		stats.RecordRequest(entry)
 
-		// Print per-request line
-		timeStr := time.Now().Format("15:04:05")
-		methodPad := fmt.Sprintf("%-5s", r.Method)
-		statusLine := fmt.Sprintf("%d", responseStatus)
-		label := webhookName
-		if label == "" {
-			label = "unmatched"
+		// Print per-request line (only when TUI is disabled)
+		if !tuiEnabled {
+			timeStr := time.Now().Format("15:04:05")
+			methodPad := fmt.Sprintf("%-5s", r.Method)
+			statusLine := fmt.Sprintf("%d", responseStatus)
+			label := webhookName
+			if label == "" {
+				label = "unmatched"
+			}
+			fmt.Printf("%s  %s %s → %s  (%s)\n", timeStr, methodPad, r.URL.Path, statusLine, label)
 		}
-		fmt.Printf("%s  %s %s → %s  (%s)\n", timeStr, methodPad, r.URL.Path, statusLine, label)
 	})
 
 	srv := &http.Server{Addr: *addr, Handler: mux}
-
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		log.Printf("listening on %s", *addr)
@@ -306,11 +339,23 @@ func main() {
 		}
 	}()
 
-	<-done
-	fmt.Println("\nshutting down...")
+	// Shutdown path: TUI mode uses bubbletea's own signal handling;
+	// non-TUI mode waits for OS signals directly.
+	var exitErr error
+	if tuiEnabled {
+		exitErr = dashboard.Run(stats, termWidth, termHeight)
+	} else {
+		done := make(chan os.Signal, 1)
+		signal.Notify(done, os.Interrupt, syscall.SIGTERM)
+		<-done
+		fmt.Println("\nshutting down...")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("shutdown: %v", err)
+	}
+	if exitErr != nil {
+		os.Exit(1)
 	}
 }

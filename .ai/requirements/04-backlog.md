@@ -28,6 +28,8 @@
 
 ### WS-010a — StatsTracker latency metrics
 
+**Status:** `done` | **Commit:** `65ea750`
+
 **User Story:**
 > As a developer, I want the dashboard to show response-time stats so that I can spot slow endpoints at a glance.
 
@@ -54,6 +56,8 @@ Then  latency stats reflect ALL recorded requests, not just the last 50
 - `Notify()` — non-blocking coalescing signal channel (buffered 1) for TUI refresh
 
 ### WS-010b — bubbletea TUI replacing line output
+
+**Status:** `done` | **Commit:** `ef101ab`
 
 **User Story:**
 > As a developer, I want the simulator to launch a full-screen dashboard on start so that I can monitor activity without the old one-line-per-request log.

@@ -55,7 +55,7 @@ And   the values update on tick without reordering rows
 
 ### UXR-003 — Live-follow pause/resume (`L`) `[Should]`
 
-**Status:** `ready` | **Phase:** 2
+**Status:** `done` | **Phase:** 2 | **Implemented:** `ed288ac`
 
 **Story:** As a developer, I want to freeze the feed while inspecting a request so that new traffic does not yank the view.
 
@@ -76,7 +76,7 @@ And   pressing g (GotoBottom) while paused resumes live-follow
 
 ### UXR-004 — Collapsible endpoints panel (`e`) `[Should]`
 
-**Status:** `ready` | **Phase:** 2
+**Status:** `done` | **Phase:** 2 | **Implemented:** `ed288ac`
 
 **Story:** As a developer, I want to collapse the endpoints panel so that short terminals have more room for the feed.
 
@@ -95,6 +95,8 @@ And   e does nothing while the filter prompt is active
 ---
 
 ### UXR-005 — Auto-collapse + layout adaptation `[Should]`
+
+**Status:** `ready` | **Phase:** 3
 
 **Story:** As a developer, I want the dashboard to adapt to short/narrow terminals so that the feed never gets squeezed to zero rows.
 
@@ -167,7 +169,7 @@ And   pressing c or esc clears both the chip and the footer filter text
 | Phase | Stories | Scope | Risk |
 |-------|---------|-------|------|
 | **1** | UXR-001, UXR-002 | Status tinting + per-endpoint stats (render-only, no layout change) | low | **DONE `28dfd5f`** |
-| **2** | UXR-003, UXR-004 | `L` pause + `e` collapse (Model state + viewport resize) | medium — viewport re-sizing is the fiddly part |
+| **2** | UXR-003, UXR-004 | `L` pause + `e` collapse (Model state + viewport resize) | medium — viewport re-sizing is the fiddly part | **DONE `ed288ac`** |
 | **3** | UXR-005 | Layout adaptation (auto-collapse, width truncation) | medium — interacts with phase 2 sizes |
 | **4** | UXR-006, UXR-007 | Prompt polish + filter chip | low |
 | **5** | UXR-008 | Row expansion | deferred — needs design decision |

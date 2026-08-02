@@ -89,7 +89,7 @@ Leveraging `bubbletea` or similar Go TUI framework. The existing `StatsTracker` 
 
 ## TGR-02 — Server and templating edge cases
 
-**Status:** `draft` | **Priority:** `[Should]`
+**Status:** `done` | **Priority:** `[Should]`
 
 **Story:**
 > As a developer, I want edge cases in the server handler and template engine covered by tests so that nil pointers and fallback paths don't cause runtime panics.
@@ -104,6 +104,8 @@ Leveraging `bubbletea` or similar Go TUI framework. The existing `StatsTracker` 
 - `BuildTemplateData()` with nil/empty body — `.Body` is empty string, no panic
 
 **Estimated tests:** 7 new test functions
+
+**Implemented:** `src/mock/server_test.go` + `src/mock/templating_test.go` — 12 test functions covering all gaps (plus CreatedAt serialization and round-robin body alternation). Full suite: 73 tests, all pass under `go test -race`.
 
 ---
 

@@ -55,6 +55,8 @@ And   the values update on tick without reordering rows
 
 ### UXR-003 — Live-follow pause/resume (`L`) `[Should]`
 
+**Status:** `ready` | **Phase:** 2
+
 **Story:** As a developer, I want to freeze the feed while inspecting a request so that new traffic does not yank the view.
 
 **AC:**
@@ -73,6 +75,8 @@ And   pressing g (GotoBottom) while paused resumes live-follow
 ---
 
 ### UXR-004 — Collapsible endpoints panel (`e`) `[Should]`
+
+**Status:** `ready` | **Phase:** 2
 
 **Story:** As a developer, I want to collapse the endpoints panel so that short terminals have more room for the feed.
 

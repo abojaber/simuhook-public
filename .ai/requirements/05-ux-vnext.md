@@ -18,7 +18,7 @@ The design contract lists `enter` → expand feed row in §4.1 (key bindings) **
 
 ### UXR-001 — Status-code tinting in feed `[Should]`
 
-**Status:** `ready` | **Phase:** 1
+**Status:** `done` | **Phase:** 1 | **Implemented:** `28dfd5f` | **QA:** verified
 
 **Story:** As a developer, I want status codes tinted by class so that I can scan the feed for errors at a glance.
 
@@ -36,7 +36,7 @@ And   only the status segment is colored (not the whole line)
 
 ### UXR-002 — Per-endpoint request counts + p95 `[Should]`
 
-**Status:** `ready` | **Phase:** 1
+**Status:** `done` | **Phase:** 1 | **Implemented:** `28dfd5f` | **QA:** verified
 
 **Story:** As a developer, I want each endpoint row in the panel to show its request count and p95 latency so that I can spot hot/expensive endpoints without switching views.
 
@@ -162,7 +162,7 @@ And   pressing c or esc clears both the chip and the footer filter text
 
 | Phase | Stories | Scope | Risk |
 |-------|---------|-------|------|
-| **1** | UXR-001, UXR-002 | Status tinting + per-endpoint stats (render-only, no layout change) | low |
+| **1** | UXR-001, UXR-002 | Status tinting + per-endpoint stats (render-only, no layout change) | low | **DONE `28dfd5f`** |
 | **2** | UXR-003, UXR-004 | `L` pause + `e` collapse (Model state + viewport resize) | medium — viewport re-sizing is the fiddly part |
 | **3** | UXR-005 | Layout adaptation (auto-collapse, width truncation) | medium — interacts with phase 2 sizes |
 | **4** | UXR-006, UXR-007 | Prompt polish + filter chip | low |

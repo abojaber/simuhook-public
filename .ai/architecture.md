@@ -76,6 +76,8 @@ All other paths are the mock surface: requests are matched against stubs and ans
 - **Log redirection:** when TUI is active, `log.SetOutput(<log-dir>/server.log)` so watcher/stub reload messages can't corrupt the alternate screen. Request logs still go to their own files via `logger.Log`.
 - **Filtering:** `Filter{Endpoint, Method, Status, Text}` with `ParseFilter` (`ep:`/`method:`/`status:` prefixes + bare text) is pure and tea-free. Applied at render time only; the ring buffer is never mutated. Prompt mode (`/` or `f`) swallows all keys except backspace/enter/esc/ctrl+c; `q` cancels the prompt before quitting.
 - **Sticky-bottom feed:** `syncFeed()` checks `viewport.AtBottom()` before `SetContent`, re-anchoring to bottom only if the user was following live; manual scroll offsets survive live updates.
+- **Status tinting (UXR-001):** `tint(status)` wraps only the status segment in the feed — 2xx green `"76"`, 3xx cyan `"39"`, 4xx yellow `"220"`, 5xx red `"196"`, other muted `"240"`. Pure render.
+- **Per-endpoint stats (UXR-002):** endpoints panel rows append `requests: N  p95: X.Xms` from `Snapshot().HitCounts`/`EndpointLatency`; ID padded to 20 chars for column alignment; zero-hit endpoints show `requests: 0`; row order stays sorted by ID.
 - **Keys:** `q`/`ctrl+c` quit, `r` refresh, `/`/`f` filter prompt, `enter` apply, `esc` cancel/clear, `c` clear, `?` help; scrolling via viewport DefaultKeyMap (`↑/k`, `↓/j`, `pgup/pgdn`, `g/G`).
 - **Startup order:** `net.Listen` → registry/watcher/load → TUI decision → logger + log redirect → banner (non-TUI only) → mux/server → `dashboard.Run` (blocks) → `srv.Shutdown`.
 

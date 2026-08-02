@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -17,6 +18,138 @@ type StatsSource interface {
 // tickMsg is a periodic refresh trigger.
 type tickMsg time.Time
 
+const (
+	wideMinWidth  = 100
+	wideMinHeight = 14
+	panelHeaderRows = 3 // title | column header | separator
+	leftFixed      = 29
+	streamFixed    = 36
+	minFlexCol     = 8
+)
+
+// geometry holds all computed layout dimensions.
+type geom struct {
+	wide, showLeft                                       bool
+	leftTotal, leftContent, rightTotal, rightContent       int
+	panelTotal, panelContent                               int
+	viewportH, feedH, epsH                                 int
+	streamW, epW, pathW                                    int
+}
+
+// wide returns true when the terminal is wide enough for the two-column layout.
+func (m Model) wide() bool {
+	return m.width >= wideMinWidth && m.height >= wideMinHeight
+}
+
+// chromeHeight returns the number of top rows in the wide layout (4 single-line rows).
+func (m Model) chromeHeight() int {
+	return 4
+}
+
+// feedHeight computes the viewport height for the stream (right) panel. In the
+// narrow layout this returns the same value as the old viewport-height math
+// (byte-identical to today's headerHeight()-based path).
+func (m Model) feedHeight() int {
+	if !m.wide() {
+		h := m.height - m.headerHeight() - 1
+		if h < 1 {
+			h = 1
+		}
+		return h
+	}
+	g := m.geometry()
+	if g.viewportH < 1 {
+		return 1
+	}
+	return g.viewportH
+}
+
+// geometry computes all layout dimensions. Pure function, single source of truth.
+func (m Model) geometry() geom {
+	w := m.width
+	h := m.height
+
+	lt := w * 2 / 5          // left panel total width
+	rt := w - lt             // right panel total width
+	lc := lt - 2             // left content width (inside border)
+	rc := rt - 2             // right content width (inside border)
+
+	panelTotal := h - 4 - 1 // chrome (4) + footer (1)
+	if panelTotal < 9 {
+		panelTotal = 9
+	}
+	panelContent := panelTotal - 2 // inside border
+
+	vpH := panelContent - panelHeaderRows
+	if vpH < 1 {
+		vpH = 1
+	}
+
+	epW := lc - leftFixed
+	if epW < minFlexCol {
+		epW = minFlexCol
+	}
+	pathW := rc - streamFixed
+	if pathW < minFlexCol {
+		pathW = minFlexCol
+	}
+	streamW := rc
+	if !m.showEndpoints {
+		streamW = w - 2
+	}
+	_ = lc // epsW = leftContent — used by endpointsView.Width via applyGeometry
+
+	return geom{
+		wide:          m.wide(),
+		showLeft:      m.showEndpoints,
+		leftTotal:     lt,
+		leftContent:   lc,
+		rightTotal:    rt,
+		rightContent:  rc,
+		panelTotal:    panelTotal,
+		panelContent:  panelContent,
+		viewportH:     vpH,
+		feedH:         vpH,
+		epsH:          vpH,
+streamW:       streamW,
+		epW:           epW,
+		pathW:         pathW,
+	}
+}
+
+// applyGeometry pushes the computed sizes onto BOTH viewports.
+func (m *Model) applyGeometry() {
+	if !m.wide() {
+		vpH := m.feedHeight()
+		m.view.Width = m.width
+		m.view.Height = vpH
+		m.endpointsView.Width = 1
+		m.endpointsView.Height = 1
+		return
+	}
+
+	g := m.geometry()
+	m.view.Width = g.streamW
+	m.view.Height = g.feedH
+	if m.showEndpoints {
+		m.endpointsView.Width = g.leftContent
+		m.endpointsView.Height = g.epsH
+	} else {
+		m.endpointsView.Width = 1
+		m.endpointsView.Height = 1
+	}
+}
+
+// syncEndpoints rebuilds the endpoints panel content and pushes it to the
+// endpoints viewport. No-op in narrow layout.
+func (m *Model) syncEndpoints() {
+	if !m.wide() {
+		return
+	}
+	g := m.geometry()
+	m.endpointsView.SetContent(strings.Join(m.endpointsRows(g), "\n"))
+}
+
 // Model is the bubbletea model for the dashboard.
 type Model struct {
 	source    StatsSource
@@ -25,6 +158,7 @@ type Model struct {
 	last      mock.StatsSnapshot
 	endpoints []*mock.Endpoint
 	view      viewport.Model
+	endpointsView viewport.Model
 	height    int
 	width     int
 	lastErr   error
@@ -70,11 +204,11 @@ func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
 		m.autoCollapsed = true
 	}
 
-	vpHeight := h - m.headerHeight() - 1
-	if vpHeight < 1 {
-		vpHeight = 1
-	}
-	m.view = viewport.New(w, vpHeight)
+	m.view = viewport.New(1, 1)
+	m.endpointsView = viewport.New(1, 1)
+	m.applyGeometry()
+	m.syncFeed()
+	m.syncEndpoints()
 	return m
 }
 
@@ -115,6 +249,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.last = m.source.Snapshot()
 		m.refreshEndpoints()
 		m.syncFeed()
+		m.syncEndpoints()
 		return m, refreshCmd(m.interval)
 
 	case tea.KeyMsg:
@@ -134,13 +269,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// else: user explicitly toggled — leave their choice alone.
 
-		m.view.Width = msg.Width
-		vpHeight := m.height - m.headerHeight() - 1 // header + footer
-		if vpHeight < 1 {
-			vpHeight = 1
-		}
-		m.view.Height = vpHeight
+		m.applyGeometry()
 		m.syncFeed()
+		m.syncEndpoints()
 		// UXR-008 — re-pin expanded summary after resize.
 		if line := m.expandedSummaryLine(); line >= 0 {
 			m.view.SetYOffset(line)
@@ -189,6 +320,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.promptErr = ""
 			m.renderFeed()
 			m.syncFeed()
+			m.syncEndpoints()
 			return m, nil
 		}
 		// UXR-006 — invalid filter: stay in prompt, show inline error.
@@ -233,6 +365,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = Filter{}
 			m.renderFeed()
 			m.syncFeed()
+			m.syncEndpoints()
 			if collapsed {
 				m.view.GotoBottom()
 			}
@@ -245,6 +378,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter = Filter{}
 		m.renderFeed()
 		m.syncFeed()
+		m.syncEndpoints()
 		if collapsed {
 			m.view.GotoBottom()
 		}
@@ -259,6 +393,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case s == "r" && !m.prompting:
 		m.last = m.source.Snapshot()
 		m.syncFeed()
+		m.syncEndpoints()
 		return m, nil
 
 	// UXR-003 — toggle live-follow pause/resume.
@@ -274,12 +409,21 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case s == "e" && !m.prompting:
 		m.showEndpoints = !m.showEndpoints
 		m.autoCollapsed = false // user explicitly toggled — override auto-collapse
-		// Re-size the viewport to account for the new header height.
-		m.view.Height = m.height - m.headerHeight() - 1
-		if m.view.Height < 1 {
-			m.view.Height = 1
-		}
+		m.applyGeometry()
 		m.syncFeed()
+		m.syncEndpoints()
+		return m, nil
+
+	// UXR-009 — left-panel independent scroll (wide layout only).
+	case (s == "shift+up" || s == "K") && !m.prompting:
+		if g := m.geometry(); g.showLeft {
+			m.endpointsView.ScrollUp(1)
+		}
+		return m, nil
+	case (s == "shift+down" || s == "J") && !m.prompting:
+		if g := m.geometry(); g.showLeft {
+			m.endpointsView.ScrollDown(1)
+		}
 		return m, nil
 	}
 
@@ -405,6 +549,7 @@ func (m *Model) renderFeed() {
 // the config lines (address/stubs/log-dir/admin), the stats line, and the
 // endpoints panel. When showEndpoints is false, the panel is collapsed to a
 // single heading line; when true and endpoints exist, the full list is shown.
+// UNCHANGED — narrow layout depends on this byte-identically.
 func (m Model) headerHeight() int {
 	h := 3 // title + config + stats
 	if len(m.endpoints) > 0 {

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -12,10 +13,15 @@ import (
 
 // Package-level lipgloss styles.
 var (
-	styleHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	styleMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	styleAccent = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	styleError  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	styleHeader    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
+	styleMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	stylePauseBtn  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleResumeBtn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220"))
+	styleTableHead = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
+	stylePanelTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
+	panelStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
 
 	// UXR-008 — feed row expansion styles.
 	styleSelBG     = lipgloss.NewStyle().Background(lipgloss.Color("236"))
@@ -105,8 +111,17 @@ func (m Model) endpointHeading(base string) string {
 	return styleMuted.Render(base)
 }
 
-// View renders the full dashboard.
+// View renders the full dashboard. Dispatches to wide or narrow layout.
 func (m Model) View() string {
+	if m.wide() {
+		return m.viewWide()
+	}
+	return m.viewNarrow()
+}
+
+// viewNarrow renders the current (pre-Phase-6) vertical layout, byte-identical
+// to the original View() body.
+func (m Model) viewNarrow() string {
 	header := m.renderHeader()
 	vp := m.view
 	if sel := m.selectedIdx(); sel >= 0 {
@@ -129,6 +144,274 @@ func (m Model) View() string {
 
 	return lipgloss.JoinVertical(lipgloss.Top, parts...)
 }
+
+// ------------------- Wide layout -------------------
+
+// viewWide renders the two-column wide layout.
+func (m Model) viewWide() string {
+	g := m.geometry()
+
+	title := truncPlain(m.renderTitleRow(g.rightTotal), m.width)
+	info := truncPlain(m.renderServerInfo(m.width), m.width)
+	detail := truncPlain(m.renderInfoDetail(m.width), m.width)
+	metrics := truncPlain(m.renderMetrics(m.width), m.width)
+
+	panels := m.renderPanels(g)
+
+	var footerBuilder strings.Builder
+	if m.prompting {
+		footerBuilder.WriteString(m.renderPromptBar())
+	} else {
+		footerBuilder.WriteString(m.renderFooter())
+	}
+
+	parts := []string{title, info, detail, metrics, panels, footerBuilder.String()}
+
+	if m.showHelp && !m.prompting {
+		parts = append(parts, m.renderHelp())
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top, parts...)
+}
+
+// renderPanels builds the side-by-side endpoints + stream panels.
+func (m Model) renderPanels(g geom) string {
+	// Stream panel (right).
+	streamPanel := m.renderStreamPanel(g)
+
+	// Endpoints panel (left).
+	if g.showLeft {
+		endpointsPanel := m.renderEndpointsPanel(g)
+		return lipgloss.JoinHorizontal(lipgloss.Top, endpointsPanel, streamPanel)
+	}
+
+	return streamPanel
+}
+
+// renderStreamPanel builds the right panel with the feed + header.
+func (m Model) renderStreamPanel(g geom) string {
+	title := m.renderStreamTitle(g)
+	headers := m.renderStreamHeaders()
+
+	vp := m.view
+	if sel := m.selectedIdx(); sel >= 0 {
+		vp.SetContent(m.buildFeed(sel).content)
+	}
+	vpLines := strings.Split(vp.View(), "\n")
+
+	// Ensure exact row count — note: View() always returns Height lines
+	// truncated/padded, but let's pad just in case.
+	for len(vpLines) < g.feedH {
+		vpLines = append(vpLines, "")
+	}
+	if len(vpLines) > g.feedH {
+		vpLines = vpLines[:g.feedH]
+	}
+
+	allLines := append([]string{title, headers}, vpLines...)
+	allLines = fitBlock(allLines, g.panelContent, g.streamW)
+	return panelStyle.Width(g.streamW).Render(strings.Join(allLines, "\n"))
+}
+
+// renderStreamTitle builds the stream panel title row.
+func (m Model) renderStreamTitle(g geom) string {
+	if m.filter != (Filter{}) && !g.showLeft {
+		return stylePanelTitle.Render("LIVE REQUEST STREAM") + "  " + styleAccent.Render("["+m.filter.String()+"]")
+	}
+	return stylePanelTitle.Render("LIVE REQUEST STREAM")
+}
+
+// renderStreamHeaders builds the stream table column headers.
+func (m Model) renderStreamHeaders() string {
+	return styleTableHead.Render(fmt.Sprintf("TIME     METHOD PATH%-15s STUB       STATUS",
+		strings.Repeat(" ", max(0, m.width-60))))
+}
+
+// renderEndpointsPanel builds the full left-panel block (title + headers + rows).
+func (m Model) renderEndpointsPanel(g geom) string {
+	title := m.renderEndpointsTitle(g)
+	header := m.renderEndpointsHeaderRow(g)
+
+	vpLines := strings.Split(m.endpointsView.View(), "\n")
+	for len(vpLines) < g.epsH {
+		vpLines = append(vpLines, "")
+	}
+	if len(vpLines) > g.epsH {
+		vpLines = vpLines[:g.epsH]
+	}
+
+	allLines := append([]string{title, header}, vpLines...)
+	allLines = fitBlock(allLines, g.panelContent, g.leftContent)
+	return panelStyle.Width(g.leftContent).Render(strings.Join(allLines, "\n"))
+}
+
+// renderEndpointsTitle builds the endpoints panel title line.
+func (m Model) renderEndpointsTitle(g geom) string {
+	base := fmt.Sprintf("REGISTERED ENDPOINTS (%d)", len(m.endpoints))
+	if m.filter != (Filter{}) && g.showLeft {
+		return stylePanelTitle.Render(base) + "  " + styleAccent.Render("["+m.filter.String()+"]")
+	}
+	return stylePanelTitle.Render(base)
+}
+
+// renderEndpointsHeaderRow builds the column-header line for the endpoints panel.
+func (m Model) renderEndpointsHeaderRow(g geom) string {
+	return styleTableHead.Render(fmt.Sprintf("METHOD ENDPOINT%-*s STUB      REQ   P95",
+		max(0, g.epW-8), ""))
+}
+
+// endpointsRows builds the content lines for the endpoints panel viewport.
+func (m Model) endpointsRows(g geom) []string {
+	if len(m.endpoints) == 0 {
+		return []string{styleMuted.Render("  (no endpoints)")}
+	}
+
+	rows := make([]string, len(m.endpoints))
+	for i, ep := range m.endpoints {
+		rows[i] = m.endpointRow(ep, g.epW)
+	}
+	return rows
+}
+
+// endpointRow builds one table row for a registered endpoint.
+func (m Model) endpointRow(ep *mock.Endpoint, epW int) string {
+	method := ep.Method
+	if method == "" {
+		method = "ANY"
+	}
+	method = padRight(truncPlain(method, 6), 6)
+
+	epPath := padRight(truncPlain(sanitize(ep.Path), epW), epW)
+	stub := padRight(truncPlain(sanitize(ep.ID), 8), 8)
+
+	count := m.last.HitCounts[ep.ID]
+	req := padLeft(compactCount(count), 4)
+
+	var p95 string
+	if lat, ok := m.last.EndpointLatency[ep.ID]; ok && lat.Count > 0 {
+		p95 = compactMs(lat.P95)
+	} else {
+		p95 = "—"
+	}
+	p95 = padLeft(p95, 6)
+
+	return " " + styleMuted.Render(method) + " " + epPath + " " + styleMuted.Render(stub) + " " + req + " " + p95
+}
+
+// renderTitleRow builds the top title row with pause button.
+func (m Model) renderTitleRow(w int) string {
+	left := styleHeader.Render("Simuhook Dashboard")
+	right := m.renderPauseButton()
+	gap := max(1, w-lipgloss.Width(left)-lipgloss.Width(right))
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// renderServerInfo builds the SERVER INFO chip row.
+func (m Model) renderServerInfo(w int) string {
+	chips := []string{
+		chip("Address", m.cfg.Addr),
+		chip("Stubs", fmt.Sprintf("%s (%d)", m.cfg.StubsDir, len(m.endpoints))),
+		chip("Uptime", m.last.Uptime.Truncate(time.Second).String()),
+		chip("Req", fmt.Sprintf("%d", m.last.TotalRequests)),
+	}
+
+	// Append endpoints chip when left panel hidden.
+	if !m.showEndpoints && m.wide() {
+		chips = append(chips, styleMuted.Render("[ Endpoints (")+
+			fmt.Sprintf("%d", len(m.endpoints))+
+			styleMuted.Render(") ▸ e ]"))
+	}
+
+	return styleMuted.Render("SERVER INFO  ") + strings.Join(chips, "  ")
+}
+
+// renderInfoDetail builds the log-dir + admin URL line.
+func (m Model) renderInfoDetail(w int) string {
+	adminURL := "http://localhost" + m.cfg.Addr + "/_admin/endpoints"
+	return styleMuted.Render(fmt.Sprintf("Log dir: %s   Admin: %s", m.cfg.LogDir, adminURL))
+}
+
+// renderMetrics builds the METRICS & LATENCY chip row.
+func (m Model) renderMetrics(w int) string {
+	lat := m.last.Latency
+	if lat.Count == 0 {
+		return styleMuted.Render("METRICS & LATENCY  [ (no requests yet) ]")
+	}
+	return styleMuted.Render(fmt.Sprintf("METRICS & LATENCY  [ Avg %.1fms ]  [ Min %.1fms ]  [ Max %.1fms ]  [ p95 %.1fms ]",
+		lat.Avg(), lat.Min, lat.Max, lat.P95))
+}
+
+// renderPauseButton builds the pause/resume visual control.
+func (m Model) renderPauseButton() string {
+	if m.liveFollow {
+		return stylePauseBtn.Render("[ Pause Stream ]")
+	}
+	return styleResumeBtn.Render("[ Resume Stream ]")
+}
+
+// chip formats a "[ Label value ]" pill: label muted, value default.
+func chip(label, value string) string {
+	return styleMuted.Render("[ "+label+" ") + value + styleMuted.Render(" ]")
+}
+
+// ------------------- Stream table row rendering -------------------
+
+// renderRow dispatches to the appropriate row renderer based on layout.
+func (m Model) renderRow(e mock.LogEntry, sel bool) string {
+	if m.wide() {
+		return m.streamRow(e, sel)
+	}
+	return m.summaryLine(e, sel)
+}
+
+// streamRow renders a table row for the wide stream panel.
+// Columns: MARK(2) TIME(8) SP METHOD(6) SP PATH(pathW) SP STUB(10) SP STATUS(6, right-aligned).
+func (m Model) streamRow(e mock.LogEntry, sel bool) string {
+	g := m.geometry()
+	if g.pathW < 1 {
+		return m.summaryLine(e, sel)
+	}
+
+	t, err := time.Parse(time.RFC3339Nano, e.Timestamp)
+	timeStr := "??:??:??"
+	if err == nil {
+		timeStr = t.Format("15:04:05")
+	}
+
+	method := padRight(truncPlain(sanitize(e.Method), 6), 6)
+	path := padRight(truncPlain(sanitize(e.Path), g.pathW), g.pathW)
+
+	label := sanitize(e.Webhook)
+	if label == "" {
+		label = "unmatched"
+	}
+	stub := padRight(truncPlain(label, 10), 10)
+
+	statusStr := fmt.Sprintf("%d", e.ResponseStatus)
+
+	// Right-align status to 6 cells.
+	statusPad := strings.Repeat(" ", max(0, 6-lipgloss.Width(statusStr)))
+
+	pre := timeStr + " " + method + " " + path + " " + stub + " " + statusPad
+
+	if !sel {
+		return "  " + pre + tint(e.ResponseStatus)
+	}
+
+	// Selected: segment-wise background.
+	var sb strings.Builder
+	sb.WriteString(styleSelMarker.Render("▍ "))
+	sb.WriteString(styleSelBG.Render(pre))
+	sb.WriteString(styleSelBG.Copy().Foreground(statusColor(e.ResponseStatus)).Render(statusStr))
+
+	visibleWidth := lipgloss.Width("▍ ") + lipgloss.Width(pre) + lipgloss.Width(statusStr)
+	if pad := g.streamW - visibleWidth; pad > 0 {
+		sb.WriteString(styleSelBG.Render(strings.Repeat(" ", pad)))
+	}
+	return sb.String()
+}
+
+// ------------------- Narrow render methods (UNTOUCHED) -------------------
 
 // renderHeader builds the dashboard header: title, server config, live stats,
 // and the list of registered endpoints.
@@ -272,10 +555,13 @@ func (m Model) renderHelp() string {
 		styleMuted.Render("│  L       pause/resume live    e       collapse endpoints    │"),
 		styleMuted.Render("│  enter   expand/collapse row                                │"),
 		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
+		styleMuted.Render("│  shift+↑/↓ K/J scroll endpoints esc   cancel / clear filter │"),
 		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
 	}
 	return strings.Join(lines, "\n")
 }
+
+// ------------------- UXR-008 — detail + feed (UNTOUCHED) -------------------
 
 // summaryLine renders a single feed line for the given log entry. When sel is
 // true the row uses the selection highlight with segment-wise background so the
@@ -415,7 +701,7 @@ func (m Model) buildFeed(selected int) feedRender {
 		entryToLine = append(entryToLine, len(lineToEntry))
 
 		sel := idx == selected
-		sb.WriteString(m.summaryLine(e, sel))
+		sb.WriteString(m.renderRow(e, sel))
 		sb.WriteByte('\n')
 		lineToEntry = append(lineToEntry, idx)
 
@@ -447,4 +733,94 @@ func (m Model) buildFeed(selected int) feedRender {
 		entryToLine: entryToLine,
 		expandedHit: expandedHit,
 	}
+}
+
+// ------------------- Layout helpers -------------------
+
+// fitBlock ensures a list of lines has exactly n rows, each one truncated to
+// w cells and blank-padded. ANSI-aware.
+func fitBlock(lines []string, n, w int) []string {
+	result := make([]string, n)
+	for i := 0; i < n; i++ {
+		if i < len(lines) {
+			line := lines[i]
+			if lipgloss.Width(line) > w {
+				// Truncate ANSI-aware: keep only what fits.
+				line = truncPlain(line, w)
+			}
+			// Pad to exact width.
+			if lw := lipgloss.Width(line); lw < w {
+				line += strings.Repeat(" ", w-lw)
+			}
+			result[i] = line
+		} else {
+			result[i] = strings.Repeat(" ", w)
+		}
+	}
+	return result
+}
+
+// padRight pads a string to the given width with trailing spaces.
+func padRight(s string, w int) string {
+	lw := lipgloss.Width(s)
+	if lw >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-lw)
+}
+
+// padLeft pads a string to the given width with leading spaces.
+func padLeft(s string, w int) string {
+	lw := lipgloss.Width(s)
+	if lw >= w {
+		return s
+	}
+	return strings.Repeat(" ", w-lw) + s
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// ------------------- Formatters -------------------
+
+// compactCount formats a count fitting in ≤4 cells:
+// 0..9999, 10k..999k, 1M..
+func compactCount(n uint64) string {
+	if n < 10000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1000000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	m := float64(n) / 1000000.0
+	// Truncate to ≤4 cells: "1M", "12M", "999M"
+	if m >= 1000 {
+		return fmt.Sprintf("%.0fM", math.Floor(m))
+	}
+	if m >= 100 {
+		return fmt.Sprintf("%.0fM", m)
+	}
+	if m >= 10 {
+		return fmt.Sprintf("%.0fM", m)
+	}
+	return fmt.Sprintf("%.0fM", m)
+}
+
+// compactMs formats milliseconds to ≤6 cells:
+// <100 "%.1fms", <10000 "%.0fms", <100000 "%.1fs", else "%.0fs".
+func compactMs(ms float64) string {
+	if ms < 100 {
+		return fmt.Sprintf("%.1fms", ms)
+	}
+	if ms < 10000 {
+		return fmt.Sprintf("%.0fms", ms)
+	}
+	if ms < 100000 {
+		return fmt.Sprintf("%.1fs", ms/1000.0)
+	}
+	return fmt.Sprintf("%.0fs", ms/1000.0)
 }

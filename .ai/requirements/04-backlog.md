@@ -126,19 +126,88 @@ Then  all recent entries are shown again
 
 ---
 
-## WS-017 — Duplicate mock.Server handler (Architect finding B4)
+## WS-017 — Single source of truth for the request-handling path (Architect finding B4)
+
+**Status:** `ready` | **Priority:** `[Could]`
+
+**Story:**
+> As a developer, I want a single source of truth for the request-handling path so that the shipped handler and any test doubles do not drift.
+
+**Context (Architect finding, 2026-08-02):**
+- Three handler families exist: (1) the anonymous closure in `main.go` — **shipped, 0% tested**; (2) `mock.Server` — **dead code** (referenced only by `server_test.go`), 63% covered, with 2 real bugs; (3) 11 ad-hoc mini-handlers written inline inside `mock_test.go` that re-implement match→respond and **test themselves** (they also produce all 4 `go vet` findings).
+- `mock.Server.handler` has no `RecordRequest`/`Logger` calls and differs from the live inline handler (no logging, no stats, different template-data handling).
+- Verified bugs in the dead `mock.Server` code: response-header `{{Header}}`/`{{Query}}` render empty (`nil, nil` passed), 404 unmatched returns `text/plain` instead of `application/json`, template clock rendered *after* the delay sleep, no admin API, hard `Close()` instead of graceful `Shutdown`.
+- Reported 74.4% mock coverage is inflated by dead code while the shipped path sits at 0%.
+
+### Decision (signed off by stakeholder 2026-08-02)
+
+**Option C — extract to `mock.NewHandler(HandlerConfig) http.Handler`** as the single source of truth.
+
+- `src/mock/handler.go` NEW: `Handler{registry, observers []func(LogEntry), now}`; `HandlerConfig{Registry *Registry (required, nil panics), Observers []func(LogEntry), Now func() time.Time (test seam)}`; `NewHandler(cfg)`; `ServeHTTP`; `FormatRequestLine(LogEntry) string` (WS-016 line, local time).
+- Observer seam (`[]func(LogEntry)` called synchronously after the response is written) mirrors the `dashboard.StatsSource` precedent and keeps `mock` TUI-agnostic. `stats.RecordRequest` is assignable directly as a method value; `logger.Log` needs a 1-line closure.
+- DELETE `src/mock/server.go` + `src/mock/server_test.go` (2 tests relocate to `registry_test.go`, 2 rewritten against the real handler).
+- DELETE the 11 self-referential `TestServer_*` mini-handlers from `mock_test.go`.
+- `main.go` keeps: flags, env, `net.Listen` fail-fast, mux, admin routes, watcher, banner, TUI, `srv.Shutdown`. Lines 225–331 replaced by ~12 lines wiring `mock.NewHandler` with observers.
+- No lifecycle changes: WS-010 startup order and bubbletea signal ownership untouched.
+
+### Locked semantics (all resolve toward shipped main.go behavior)
+
+1. Response-header templates get `headers, query` passed (fixes the empty-render bug).
+2. Template data built **before** the delay sleep — `{{.Now}}` = request-receipt time.
+3. 404 unmatched: explicit `Content-Type: application/json`.
+4. Request ID generated first, used in templates and `LogEntry`.
+5. `LatencyMs` includes `resp.Delay` (unchanged, documented).
+6. Keep the `r.Body != nil` guard.
+7. Never write through the `*Response` returned by `PickResponse`; use a local status var.
+8. **WS-016 line stays LOCAL time** (`FormatRequestLine` parses and `.Local()`s the UTC `LogEntry.Timestamp`). *Stakeholder approved 2026-08-02.*
+9. **Response-header `{{Header}}`/`{{Query}}` begin resolving real values.** *Stakeholder approved 2026-08-02 — acknowledged as an output change for stubs using them.*
+
+### Out of scope (deferred to WS-017b)
+
+- `mock.NewAdminHandler(registry) http.Handler` extraction from `main.go:159-222` + tests (GET/POST/PUT/DELETE, 400/404/405). *Stakeholder approved deferral 2026-08-02.*
+- `logger.Log` dropped-error reporting; observer panic policy; latency-includes-delay goroutine resource risk.
+
+### Test plan (~24 tests, all vs. the shipped handler)
+
+Rewritten (from server_test.go): round-robin variants (status + body), nil-headers no-panic. Relocated (registry_test.go): `List` JSON round-trip + `created_at`. New: matched/unmatched observer entries, latency includes delay, logger+stats integration (the test whose absence allowed the drift), template-header funcs, pre-delay timestamp, 404 content-type, nil body, empty-body no-write, multi-value query, concurrency under `-race`, `FormatRequestLine`, nil-registry panic. Timing asserts are lower-bound only; round-robin tests never `t.Parallel()`.
+
+### Verification gates
+
+- Step 3 manual smoke: `go run . --tui off` + curl matched/unmatched, then `--tui on` (counts increment, `q` exits cleanly).
+- `go vet ./...` is clean only from step 5 onward (4 pre-existing findings live in deleted tests).
+- `rg -n 'NewServer\|mock\.Server\|MarshalEndpoints' src/` ⇒ no hits after step 4.
+
+### Implementation steps
+
+1. Add `handler.go` (+ nothing else). Green: `go build ./... && go vet ./... && go test -race -count=1 ./...`
+2. Add `handler_test.go` (tests 1–3 + 6–25). Green: `go test -race -count=1 ./mock/`
+3. Rewire `main.go` (delete 225–331, insert observer wiring). Manual smoke as above.
+4. Delete `server.go` + `server_test.go`; relocate 2 tests. `rg` clean.
+5. Delete 11 self-referential tests from `mock_test.go`; prune imports. `go vet ./...` = 0 findings.
+6. *(WS-017b, deferred)* `mock.NewAdminHandler` extraction.
+7. Docs: `.ai/architecture.md` — remove Open Items WS-017, add ADR block, `server.go` → `handler.go` in tree, record locked semantics.
+8. Backlog: WS-017 `ready → done`, record chosen option + commit; open WS-017b item.
+
+---
+
+## WS-017b — Extract admin API into `mock.NewAdminHandler` (deferred from WS-017)
 
 **Status:** `draft` | **Priority:** `[Could]`
 
 **Story:**
-> As a developer, I want a single source of truth for the request-handling path so that mock.Server and the main.go inline handler do not drift.
+> As a developer, I want the admin REST API handler extracted into a testable `mock.NewAdminHandler(registry) http.Handler` so that the control-plane routes are covered by unit tests rather than only by manual curl smoke tests.
 
-**Context (Architect finding):**
-- `mock.NewServer`/`mock.Server.handler` is referenced only from `server_test.go`. main.go never calls it.
-- `mock.Server.handler` has no `RecordRequest`/`Logger` calls and differs from the live inline handler in main.go (no logging, no stats, different template-data handling).
-- Two divergent implementations of the core matching path are a latent correctness risk — `server_test.go` can pass while the shipped handler differs.
+**Context:**
+- Deferred from WS-017 (stakeholder approved deferral 2026-08-02) to keep WS-017 focused on the request-handling path.
+- Admin routes currently live inline in `main.go:159-222` (`/_admin/endpoints` + `/_admin/endpoints/`), untested by unit tests.
 
-**Options:** unify the two handlers into `mock.Server` (preferred) or delete `mock.Server` and move tests to the real handler. Decision deferred.
+**Scope:**
+- Extract to `mock.NewAdminHandler(registry) http.Handler`; mount on both `/_admin/endpoints` and `/_admin/endpoints/`.
+- Preserve contract byte-for-byte: `POST` → 201 + created entity, `DELETE` → 204, empty-id → 400, invalid JSON → 400, missing id → 404, wrong method → 405.
+- Tests: GET list, POST create, GET one, PUT update, DELETE remove, 400 invalid JSON, 400 empty id, 404 missing id, 405 wrong method.
+- Retires most of TGR-04's admin gap (currently `[Won't]`).
+
+**Dependencies:** WS-017 must land first (handler.go provides the observer/registry seams and deletes the old `MarshalEndpoints`).
 
 ---
 

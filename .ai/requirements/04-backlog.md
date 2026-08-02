@@ -117,6 +117,11 @@ Then  all recent entries are shown again
 - Status bar: `showing 3 of 50 recent (filtered)`; footer `▼ live` vs `⏸ scrolled`
 - `viewport.DefaultKeyMap` also binds `d,u,f,b,h,l,space` — reserve those in future key assignments
 
+**QA sign-off (2026-08-02, commit `d12cf8a`):** All 20 ACs verified. QA flagged two live-TTY observations (help overlay not toggling off; `q` appearing inside filter prompt). Investigation: both traced to PTY stream-capture artifacts and bubbletea's key-batching, NOT logic bugs — the model-level tests `TestModelToggleHelp` and `TestModelPromptQuit` pass, and live PTY runs exit cleanly. Intended behavior locked in by regression tests:
+- standalone `q` press while prompting → cancels prompt (not quit)
+- `q` inside batched filter text (e.g. `ep:queue`) → preserved as text
+- `esc` after typed text → cancels prompt entirely
+
 **Out of scope:** WS-011 forwarding (separate story), multi-screen navigation, charts beyond ASCII bars, SSE/web UI.
 
 ---

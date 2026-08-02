@@ -272,3 +272,359 @@ func TestModelUpdateRefreshKey(t *testing.T) {
 		t.Error("expected nil cmd from refresh (no re-arm)")
 	}
 }
+
+func TestModelPromptEnter(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: []mock.LogEntry{
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/orders", ResponseStatus: 200, Webhook: "order-placed", LatencyMs: 5.0},
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
+			},
+			TotalLogs: 2,
+		},
+	}
+	m := newModel(src, 80, 24)
+
+	// Press '/' to enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Error("expected prompting after '/'")
+	}
+
+	// Type filter text
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m2 = updated.(Model)
+	if m2.prompt != "ep:order" {
+		t.Errorf("expected prompt='ep:order', got %q", m2.prompt)
+	}
+
+	// Press enter to apply
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = updated.(Model)
+	if m2.prompting {
+		t.Error("expected not prompting after enter")
+	}
+	if m2.filter.Endpoint != "order" {
+		t.Errorf("expected filter.Endpoint='order', got %q", m2.filter.Endpoint)
+	}
+	if m2.prompt != "" {
+		t.Errorf("expected empty prompt after enter, got %q", m2.prompt)
+	}
+}
+
+func TestModelPromptCancel(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting after '/'")
+	}
+
+	// Cancel with esc
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 = updated.(Model)
+	if m2.prompting {
+		t.Error("expected not prompting after esc")
+	}
+	if m2.prompt != "" {
+		t.Errorf("expected empty prompt after esc, got %q", m2.prompt)
+	}
+}
+
+func TestModelPromptQuit(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+
+	// Press q while prompting — should cancel prompt, not quit
+	updated, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m2 = updated.(Model)
+	if m2.prompting {
+		t.Error("expected not prompting after q in prompt mode")
+	}
+	// cmd should be nil (not tea.Quit)
+	if cmd != nil {
+		t.Error("expected nil cmd (cancel prompt), not quit")
+	}
+
+	// Press q while NOT prompting — should quit
+	updated, cmd = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Error("expected non-nil cmd (quit) from q when not prompting")
+	}
+}
+
+func TestModelClearFilter(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: []mock.LogEntry{
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/test", ResponseStatus: 200, Webhook: "test", LatencyMs: 1.0},
+			},
+			TotalLogs: 1,
+		},
+	}
+	m := newModel(src, 80, 24)
+	// Pre-populate last snapshot for render
+	m.last = src.Snapshot()
+
+	// Set a filter
+	m.filter = Filter{Endpoint: "order"}
+
+	// Press 'c' to clear
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m2 := updated.(Model)
+	if m2.filter != (Filter{}) {
+		t.Error("expected empty filter after 'c'")
+	}
+}
+
+func TestModelToggleHelp(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Toggle on
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2 := updated.(Model)
+	if !m2.showHelp {
+		t.Error("expected showHelp=true after first '?'")
+	}
+
+	// Toggle off
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2 = updated.(Model)
+	if m2.showHelp {
+		t.Error("expected showHelp=false after second '?'")
+	}
+}
+
+func TestModelFilteredView(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: []mock.LogEntry{
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/orders", ResponseStatus: 201, Webhook: "order-placed", LatencyMs: 5.0},
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/users", ResponseStatus: 201, Webhook: "user-created", LatencyMs: 3.0},
+			},
+			TotalLogs: 3,
+		},
+	}
+	m := newModel(src, 80, 24)
+	m.last = src.Snapshot()
+
+	// No filter — all entries visible
+	m.renderFeed()
+	view := m.View()
+	if !strings.Contains(view, "order-placed") {
+		t.Error("expected order-placed in unfiltered view")
+	}
+	if !strings.Contains(view, "health") {
+		t.Error("expected health in unfiltered view")
+	}
+	if !strings.Contains(view, "user-created") {
+		t.Error("expected user-created in unfiltered view")
+	}
+
+	// Filter by endpoint
+	m.filter = Filter{Endpoint: "order"}
+	m.renderFeed()
+	view = m.View()
+	if !strings.Contains(view, "order-placed") {
+		t.Error("expected order-placed when filtering by endpoint 'order'")
+	}
+	if strings.Contains(view, "health") {
+		t.Error("did NOT expect health when filtering by endpoint 'order'")
+	}
+	if strings.Contains(view, "user-created") {
+		t.Error("did NOT expect user-created when filtering by endpoint 'order'")
+	}
+
+	// Filter with no matches
+	m.filter = Filter{Endpoint: "nonexistent"}
+	m.renderFeed()
+	view = m.View()
+	if !strings.Contains(view, "(no entries match filter)") {
+		t.Error("expected '(no entries match filter)' message")
+	}
+
+	// Clear filter — all visible again
+	m.filter = Filter{}
+	m.renderFeed()
+	view = m.View()
+	if !strings.Contains(view, "health") {
+		t.Error("expected health after clearing filter")
+	}
+}
+
+func TestModelFilterFooter(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: []mock.LogEntry{
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/test", ResponseStatus: 201, Webhook: "order-placed", LatencyMs: 5.0},
+				{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
+			},
+			TotalLogs: 2,
+		},
+	}
+	m := newModel(src, 80, 24)
+	m.last = src.Snapshot()
+
+	// Set a filter and verify footer contains filter info
+	m.filter = Filter{Endpoint: "order"}
+	m.renderFeed()
+	view := m.View()
+	if !strings.Contains(view, "filter: ep:order") {
+		t.Error("expected footer to contain filter string")
+	}
+	if !strings.Contains(view, "showing 1 of 2") {
+		t.Error("expected footer to show filtered count (1 of 2)")
+	}
+
+	// Clear filter
+	m.filter = Filter{}
+	m.renderFeed()
+	view = m.View()
+	if strings.Contains(view, "filter:") {
+		t.Error("did not expect filter string in footer after clearing")
+	}
+	if !strings.Contains(view, "showing 2 of 2") {
+		t.Error("expected footer to show unfiltered count (2 of 2)")
+	}
+}
+
+func TestModelPromptBackspace(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting after 'f'")
+	}
+
+	// Type some text
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m2 = updated.(Model)
+	if m2.prompt != "ab" {
+		t.Fatalf("expected prompt='ab', got %q", m2.prompt)
+	}
+
+	// Backspace
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m2 = updated.(Model)
+	if m2.prompt != "a" {
+		t.Errorf("expected prompt='a' after backspace, got %q", m2.prompt)
+	}
+
+	// Backspace again
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m2 = updated.(Model)
+	if m2.prompt != "" {
+		t.Errorf("expected empty prompt after backspace, got %q", m2.prompt)
+	}
+
+	// Backspace on empty prompt (no-op)
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m2 = updated.(Model)
+	if m2.prompt != "" {
+		t.Errorf("expected still empty prompt, got %q", m2.prompt)
+	}
+}
+
+func TestModelPromptView(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+
+	// View should contain prompt bar
+	view := m2.View()
+	if !strings.Contains(view, "filter:") {
+		t.Error("expected prompt bar in view when prompting")
+	}
+	if !strings.Contains(view, "esc cancel") {
+		t.Error("expected 'esc cancel' in prompt bar")
+	}
+	if !strings.Contains(view, "enter apply") {
+		t.Error("expected 'enter apply' in prompt bar")
+	}
+}
+
+func TestModelInvalidFilterStatus(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+
+	// Type invalid status filter
+	for _, r := range "status:abc" {
+		updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m2 = updated.(Model)
+	}
+
+	// Press enter — invalid filter, should be ignored (ok=false)
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = updated.(Model)
+	if m2.filter != (Filter{}) {
+		t.Error("expected unchanged filter when status:abc is invalid")
+	}
+	if m2.prompting {
+		t.Error("expected not prompting after enter with invalid filter")
+	}
+}
+
+func TestModelHelpView(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	m.showHelp = true
+	view := m.View()
+	if !strings.Contains(view, "Key bindings") {
+		t.Error("expected help panel in view")
+	}
+	if !strings.Contains(view, "/ f") {
+		t.Error("expected / f binding in help")
+	}
+	if !strings.Contains(view, "scro") {
+		t.Error("expected scroll hint in help")
+	}
+}
+
+func TestModelCtrlHBackspace(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+
+	// Type a character
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m2 = updated.(Model)
+
+	// ctrl+h should delete
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	m2 = updated.(Model)
+	if m2.prompt != "" {
+		t.Errorf("expected empty prompt after ctrl+h, got %q", m2.prompt)
+	}
+}

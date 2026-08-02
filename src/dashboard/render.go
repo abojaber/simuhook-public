@@ -18,8 +18,21 @@ var (
 func (m Model) View() string {
 	header := m.renderHeader()
 	feed := m.view.View()
-	footer := m.renderFooter()
-	return lipgloss.JoinVertical(lipgloss.Top, header, feed, footer)
+
+	var footerBuilder strings.Builder
+	if m.prompting {
+		footerBuilder.WriteString(m.renderPromptBar())
+	} else {
+		footerBuilder.WriteString(m.renderFooter())
+	}
+
+	parts := []string{header, feed, footerBuilder.String()}
+
+	if m.showHelp && !m.prompting {
+		parts = append(parts, m.renderHelp())
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top, parts...)
 }
 
 // renderHeader builds the 2-line header.
@@ -46,9 +59,43 @@ func (m Model) renderHeader() string {
 // renderFooter builds the 1-line footer.
 func (m Model) renderFooter() string {
 	total := uint64(len(m.last.RecentLogs))
-	totalLogs := m.last.TotalLogs
-	footer := fmt.Sprintf("showing %d of %d recent · q quit · r refresh", total, totalLogs)
+	totalDisplayed := total
+	if m.filter != (Filter{}) {
+		// Count filtered entries
+		var count uint64
+		for _, e := range m.last.RecentLogs {
+			if m.filter.Matches(e) {
+				count++
+			}
+		}
+		totalDisplayed = count
+	}
+
+	footer := fmt.Sprintf("showing %d of %d recent · q quit · r refresh", totalDisplayed, total)
+
+	if m.filter != (Filter{}) {
+		footer += " · filter: " + m.filter.String()
+	}
+
 	return styleMuted.Render(footer)
+}
+
+// renderPromptBar builds the prompt line shown when the user is typing a filter.
+func (m Model) renderPromptBar() string {
+	return styleMuted.Render("filter: " + m.prompt + "▌" + "  esc cancel · enter apply")
+}
+
+// renderHelp builds a help panel showing key bindings.
+func (m Model) renderHelp() string {
+	lines := []string{
+		styleMuted.Render("╭── Key bindings ─────────────────────────────────────────────╮"),
+		styleMuted.Render("│  / f     enter filter mode    esc     cancel / clear filter │"),
+		styleMuted.Render("│  r       refresh now          ?       toggle this help      │"),
+		styleMuted.Render("│  c       clear filter         q       quit                  │"),
+		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
+		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
+	}
+	return strings.Join(lines, "\n")
 }
 
 // buildFeed formats recent log entries into a string for the viewport.
@@ -58,7 +105,13 @@ func (m Model) buildFeed() string {
 	}
 
 	var sb strings.Builder
+	anyMatched := false
 	for _, entry := range m.last.RecentLogs {
+		if m.filter != (Filter{}) && !m.filter.Matches(entry) {
+			continue
+		}
+		anyMatched = true
+
 		// Parse timestamp to extract the time portion
 		t, err := time.Parse(time.RFC3339Nano, entry.Timestamp)
 		timeStr := "??:??:??"
@@ -80,5 +133,10 @@ func (m Model) buildFeed() string {
 			entry.LatencyMs,
 		)
 	}
+
+	if !anyMatched && m.filter != (Filter{}) {
+		return styleMuted.Render("(no entries match filter)")
+	}
+
 	return sb.String()
 }

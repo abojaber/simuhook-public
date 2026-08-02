@@ -1933,3 +1933,58 @@ func TestRenderFilterChipCollapsed(t *testing.T) {
 		t.Error("expected '[ep:ping]' chip in collapsed heading")
 	}
 }
+
+// TestModelPromptSpaceTyping verifies the space key works in the prompt.
+// bubbletea delivers a space keypress as KeySpace, not KeyRunes — the handler
+// must accept both, otherwise multi-token filters (ep:ping status:200) are
+// impossible to type.
+func TestModelPromptSpaceTyping(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = updated.(Model)
+
+	for _, r := range "ep:ping" {
+		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+	// Space arrives as KeySpace.
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = mm.(Model)
+	for _, r := range "status:200" {
+		mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mm.(Model)
+	}
+
+	if m.prompt != "ep:ping status:200" {
+		t.Errorf("expected prompt 'ep:ping status:200', got %q", m.prompt)
+	}
+
+	// Enter applies the full multi-token filter.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.prompting {
+		t.Error("expected prompt closed after valid enter")
+	}
+	if m.filter.Endpoint != "ping" || m.filter.Status != 200 {
+		t.Errorf("expected filter ep:ping status:200, got %+v", m.filter)
+	}
+}
+
+// TestModelPromptSlashOpens verifies '/' enters prompt mode (regression guard
+// for the PTY harness finding).
+func TestModelPromptSlashOpens(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = updated.(Model)
+	if !m.prompting {
+		t.Fatal("expected prompting=true after '/'")
+	}
+	// Escape cancels.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(Model)
+	if m.prompting {
+		t.Fatal("expected prompting=false after esc")
+	}
+}

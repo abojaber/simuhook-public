@@ -249,6 +249,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.Type == tea.KeyRunes:
 			m.prompt += string(msg.Runes)
 			m.promptErr = ""
+		case msg.Type == tea.KeySpace || s == " ":
+			// bubbletea delivers a space keypress as KeySpace (not KeyRunes).
+			m.prompt += " "
+			m.promptErr = ""
 		}
 		return m, nil
 	}

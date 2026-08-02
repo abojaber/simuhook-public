@@ -119,7 +119,7 @@ Then  feed lines truncate from the right, dropping the latency segment first
 
 ### UXR-006 — Prompt UX polish: token highlight + inline validation `[Could]`
 
-**Status:** `done` | **Phase:** 4 | **Implemented:** `6835a18`
+**Status:** `verified` | **Phase:** 4 | **Implemented:** `6835a18` | **Verified:** (space-key fix, uncommitted at doc time — commit in progress)
 
 **Story:** As a developer, I want live filter feedback while typing so that I can correct mistakes before pressing enter.
 
@@ -142,7 +142,7 @@ Then  the filter applies as today
 
 ### UXR-007 — Filter chip in endpoints panel header `[Could]`
 
-**Status:** `done` | **Phase:** 4 | **Implemented:** `6835a18`
+**Status:** `verified` | **Phase:** 4 | **Implemented:** `6835a18`
 
 **Story:** As a developer, I want the active filter visible in the endpoints panel so that I know the panel is filtered without looking at the footer.
 

@@ -35,16 +35,22 @@ type Model struct {
 	prompt    string
 	prompting bool
 	showHelp  bool
+
+	// UXR-003 / UXR-004 — live-follow and collapsible endpoints panel.
+	liveFollow    bool
+	showEndpoints bool
 }
 
 func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
 	m := Model{
-		source:   s,
-		eps:      eps,
-		cfg:      cfg,
-		width:    w,
-		height:   h,
-		interval: time.Second,
+		source:        s,
+		eps:           eps,
+		cfg:           cfg,
+		width:         w,
+		height:        h,
+		interval:      time.Second,
+		liveFollow:    true,
+		showEndpoints: true,
 	}
 	m.refreshEndpoints()
 	m.view = viewport.New(w, h-m.headerHeight()-1)
@@ -172,6 +178,23 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.last = m.source.Snapshot()
 		m.syncFeed()
 		return m, nil
+
+	// UXR-003 — toggle live-follow pause/resume.
+	case s == "L" && !m.prompting:
+		m.liveFollow = !m.liveFollow
+		if m.liveFollow {
+			m.view.GotoBottom()
+		}
+		m.syncFeed()
+		return m, nil
+
+	// UXR-004 — toggle endpoints panel collapse/expand.
+	case s == "e" && !m.prompting:
+		m.showEndpoints = !m.showEndpoints
+		// Re-size the viewport to account for the new header height.
+		m.view.Height = m.height - m.headerHeight() - 1
+		m.syncFeed()
+		return m, nil
 	}
 
 	// Prompt input mode: swallow all keys.
@@ -190,15 +213,21 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Non-prompt mode: forward unhandled keys to the viewport for scrolling.
 	var cmd tea.Cmd
 	m.view, cmd = m.view.Update(msg)
+	// UXR-003 — resume live-follow when the user scrolls to the bottom.
+	if m.view.AtBottom() {
+		m.liveFollow = true
+	}
 	return m, cmd
 }
 
-// syncFeed re-anchors the viewport to the bottom if it was following live,
-// otherwise preserves the user's scroll offset while live updates continue.
+// syncFeed re-anchors the viewport to the bottom if live-follow is enabled
+// and the user was already at the bottom; when paused, the content still
+// updates but the scroll offset is preserved (the viewport's YOffset is
+// unchanged by SetContent so long as the line count does not shrink).
 func (m *Model) syncFeed() {
 	atBottom := m.view.AtBottom()
 	m.renderFeed()
-	if atBottom {
+	if atBottom && m.liveFollow {
 		m.view.GotoBottom()
 	}
 }
@@ -210,11 +239,16 @@ func (m *Model) renderFeed() {
 
 // headerHeight returns the number of rows the header occupies: the title,
 // the config lines (address/stubs/log-dir/admin), the stats line, and the
-// endpoints list (if any endpoints are registered).
+// endpoints panel. When showEndpoints is false, the panel is collapsed to a
+// single heading line; when true and endpoints exist, the full list is shown.
 func (m Model) headerHeight() int {
 	h := 3 // title + config + stats
 	if len(m.endpoints) > 0 {
-		h += 1 + len(m.endpoints) // "Endpoints:" heading + one row each
+		if m.showEndpoints {
+			h += 1 + len(m.endpoints) // "Endpoints:" heading + one row each
+		} else {
+			h += 1 // collapsed: just "Endpoints: (N) ▾"
+		}
 	}
 	return h
 }

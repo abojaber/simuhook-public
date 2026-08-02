@@ -84,27 +84,33 @@ func (m Model) renderHeader() string {
 
 	// Endpoints list
 	if len(m.endpoints) > 0 {
-		var epParts []string
-		for _, ep := range m.endpoints {
-			method := ep.Method
-			if method == "" {
-				method = "ANY "
-			}
-			left := fmt.Sprintf("    %-5s %s → %-20s", method, ep.Path, ep.ID)
+		if m.showEndpoints {
+			var epParts []string
+			for _, ep := range m.endpoints {
+				method := ep.Method
+				if method == "" {
+					method = "ANY "
+				}
+				left := fmt.Sprintf("    %-5s %s → %-20s", method, ep.Path, ep.ID)
 
-			// UXR-002 — per-endpoint request count + p95
-			count := m.last.HitCounts[ep.ID]
-			epLat := m.last.EndpointLatency[ep.ID]
-			if epLat.Count > 0 {
-				left += fmt.Sprintf("  requests: %d  p95: %.1fms", count, epLat.P95)
-			} else {
-				left += fmt.Sprintf("  requests: %d", count)
-			}
+				// UXR-002 — per-endpoint request count + p95
+				count := m.last.HitCounts[ep.ID]
+				epLat := m.last.EndpointLatency[ep.ID]
+				if epLat.Count > 0 {
+					left += fmt.Sprintf("  requests: %d  p95: %.1fms", count, epLat.P95)
+				} else {
+					left += fmt.Sprintf("  requests: %d", count)
+				}
 
-			epParts = append(epParts, left)
+				epParts = append(epParts, left)
+			}
+			endpoints := styleMuted.Render("Endpoints:") + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
+			parts = append(parts, endpoints)
+		} else {
+			// UXR-004 — collapsed endpoints panel: single "Endpoints: (N) ▾" line.
+			collapsed := styleMuted.Render(fmt.Sprintf("Endpoints: (%d) ▾", len(m.endpoints)))
+			parts = append(parts, collapsed)
 		}
-		endpoints := styleMuted.Render("Endpoints:") + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
-		parts = append(parts, endpoints)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Top, parts...)
@@ -125,7 +131,16 @@ func (m Model) renderFooter() string {
 		totalDisplayed = count
 	}
 
-	footer := fmt.Sprintf("showing %d of %d recent · q quit · r refresh", totalDisplayed, total)
+	footer := fmt.Sprintf("showing %d of %d recent · ", totalDisplayed, total)
+
+	// UXR-003 — live-follow status indicator.
+	if m.liveFollow {
+		footer += "▶ live · "
+	} else {
+		footer += "⏸ live · "
+	}
+
+	footer += "q quit · r refresh"
 
 	if m.filter != (Filter{}) {
 		footer += " · filter: " + m.filter.String()
@@ -146,6 +161,7 @@ func (m Model) renderHelp() string {
 		styleMuted.Render("│  / f     enter filter mode    esc     cancel / clear filter │"),
 		styleMuted.Render("│  r       refresh now          ?       toggle this help      │"),
 		styleMuted.Render("│  c       clear filter         q       quit                  │"),
+		styleMuted.Render("│  L       pause/resume live    e       collapse endpoints    │"),
 		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
 		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
 	}

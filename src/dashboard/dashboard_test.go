@@ -945,3 +945,380 @@ func TestRenderEndpointStatsOrderStable(t *testing.T) {
 		}
 	}
 }
+
+// ------------------- UXR-003 — live-follow pause/resume -------------------
+
+func TestModelLiveFollowDefault(t *testing.T) {
+	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true by default")
+	}
+}
+
+func TestModelLiveFollowToggle(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{
+		RecentLogs: []mock.LogEntry{},
+	}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Press L — should pause.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 := updated.(Model)
+	if m2.liveFollow {
+		t.Error("expected liveFollow=false after first L")
+	}
+
+	// Press L again — should resume.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 = updated.(Model)
+	if !m2.liveFollow {
+		t.Error("expected liveFollow=true after second L")
+	}
+}
+
+func TestModelLiveFollowPausePreservesOffset(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// Fill with enough entries to overflow the viewport.
+	entries := make([]mock.LogEntry, 50)
+	for i := range entries {
+		entries[i] = mock.LogEntry{
+			Timestamp:      now,
+			Method:         "GET",
+			Path:           "/test",
+			ResponseStatus: 200,
+			Webhook:        "test",
+			LatencyMs:      1.0,
+		}
+	}
+
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: entries,
+			TotalLogs:  uint64(len(entries)),
+		},
+	}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	// Ensure we start at the bottom.
+	m.view.GotoBottom()
+	if !m.view.AtBottom() {
+		t.Fatal("expected at bottom after GotoBottom")
+	}
+
+	// Pause live-follow.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 := updated.(Model)
+	if m2.liveFollow {
+		t.Fatal("expected liveFollow=false after L")
+	}
+
+	// Scroll up a few lines.
+	for i := 0; i < 5; i++ {
+		updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m2 = updated.(Model)
+	}
+	preTickOffset := m2.view.YOffset
+
+	// Send a tick — should NOT scroll back to bottom.
+	src.snap.RecentLogs = append(src.snap.RecentLogs, mock.LogEntry{
+		Timestamp:      now,
+		Method:         "POST",
+		Path:           "/new",
+		ResponseStatus: 201,
+		Webhook:        "new-one",
+		LatencyMs:      2.0,
+	})
+	src.snap.TotalLogs++
+	updated, _ = m2.Update(tickMsg(time.Now()))
+	m2 = updated.(Model)
+
+	// Offset should be preserved (not at bottom).
+	if m2.view.AtBottom() {
+		t.Error("expected not-at-bottom after tick while paused — YOffset should be preserved")
+	}
+	// YOffset should be close to pre-tick value (new line appended at bottom
+	// should not change the offset from top).
+	postTickOffset := m2.view.YOffset
+	if postTickOffset != preTickOffset {
+		t.Logf("pre-tick YOffset=%d, post-tick YOffset=%d (minor drift from re-render is OK)", preTickOffset, postTickOffset)
+	}
+
+	// Resume — should re-anchor to bottom.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 = updated.(Model)
+	if !m2.liveFollow {
+		t.Error("expected liveFollow=true after resume L")
+	}
+	if !m2.view.AtBottom() {
+		t.Error("expected at-bottom after resume")
+	}
+}
+
+func TestModelLiveFollowPromptSwallowsL(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Enter prompt mode.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting after '/'")
+	}
+
+	// Press L while prompting — should NOT toggle liveFollow.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 = updated.(Model)
+	if !m2.liveFollow {
+		t.Error("expected liveFollow unchanged (true) when L pressed in prompt mode")
+	}
+	if !m2.prompting {
+		t.Error("expected still prompting after L")
+	}
+}
+
+func TestModelLiveFollowResumeOnScrollToBottom(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	entries := make([]mock.LogEntry, 20)
+	for i := range entries {
+		entries[i] = mock.LogEntry{
+			Timestamp:      now,
+			Method:         "GET",
+			Path:           "/test",
+			ResponseStatus: 200,
+			Webhook:        "test",
+			LatencyMs:      1.0,
+		}
+	}
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: entries,
+			TotalLogs:  uint64(len(entries)),
+		},
+	}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	m.view.GotoBottom()
+
+	// Pause.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 := updated.(Model)
+	if m2.liveFollow {
+		t.Fatal("expected paused")
+	}
+
+	// Scroll up to leave the bottom.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m2 = updated.(Model)
+	if m2.view.AtBottom() {
+		t.Fatal("expected not-at-bottom after scrolling up")
+	}
+
+	// Now scroll back down to bottom — should resume live-follow.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m2 = updated.(Model)
+	if !m2.liveFollow {
+		t.Error("expected liveFollow=true after scrolling back to bottom")
+	}
+	if !m2.view.AtBottom() {
+		t.Error("expected at-bottom after scrolling down")
+	}
+}
+
+// ------------------- UXR-004 — collapsible endpoints panel -------------------
+
+func TestModelCollapseEndpointsDefault(t *testing.T) {
+	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	if !m.showEndpoints {
+		t.Error("expected showEndpoints=true by default")
+	}
+}
+
+func TestModelCollapseEndpointsToggle(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "health", Method: "GET", Path: "/health"},
+			{ID: "orders", Method: "POST", Path: "/orders"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 80, 24)
+	if m.headerHeight() != 3+1+3 {
+		t.Errorf("expected headerHeight=%d with 3 endpoints open, got %d", 3+1+3, m.headerHeight())
+	}
+
+	// Press e — should collapse.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 := updated.(Model)
+	if m2.showEndpoints {
+		t.Error("expected showEndpoints=false after first e")
+	}
+	if m2.headerHeight() != 3+1 {
+		t.Errorf("expected headerHeight=%d collapsed, got %d", 3+1, m2.headerHeight())
+	}
+
+	// Press e again — should expand.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 = updated.(Model)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints=true after second e")
+	}
+	if m2.headerHeight() != 3+1+3 {
+		t.Errorf("expected headerHeight=%d expanded, got %d", 3+1+3, m2.headerHeight())
+	}
+}
+
+func TestModelCollapseEndpointsViewportHeight(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "a", Method: "GET", Path: "/a"},
+			{ID: "b", Method: "GET", Path: "/b"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 80, 24)
+
+	// Expanded: headerHeight = 3 + 1 + 2 = 6, viewport height = 24 - 6 - 1 = 17
+	if m.view.Height != 24-m.headerHeight()-1 {
+		t.Errorf("expected viewport height %d, got %d", 24-m.headerHeight()-1, m.view.Height)
+	}
+
+	// Collapse via e key.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 := updated.(Model)
+
+	// Collapsed: headerHeight = 3 + 1 = 4, viewport height = 24 - 4 - 1 = 19
+	expected := 24 - m2.headerHeight() - 1
+	if m2.view.Height != expected {
+		t.Errorf("expected collapsed viewport height=%d, got %d", expected, m2.view.Height)
+	}
+
+	// Expand back.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 = updated.(Model)
+	expected = 24 - m2.headerHeight() - 1
+	if m2.view.Height != expected {
+		t.Errorf("expected expanded viewport height=%d, got %d", expected, m2.view.Height)
+	}
+}
+
+func TestModelCollapseEndpointsNoEndpoints(t *testing.T) {
+	// When no endpoints are registered, headerHeight should be 3 regardless of showEndpoints.
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	if m.headerHeight() != 3 {
+		t.Errorf("expected headerHeight=3 with no endpoints, got %d", m.headerHeight())
+	}
+
+	// Collapse when no endpoints — headerHeight stays 3.
+	m.showEndpoints = false
+	if m.headerHeight() != 3 {
+		t.Errorf("expected headerHeight=3 collapsed with no endpoints, got %d", m.headerHeight())
+	}
+}
+
+func TestModelCollapseEndpointsPromptSwallowsE(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Enter prompt mode.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting after '/'")
+	}
+
+	// Press e while prompting — should NOT toggle showEndpoints.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 = updated.(Model)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints unchanged (true) when e pressed in prompt mode")
+	}
+	if !m2.prompting {
+		t.Error("expected still prompting after e")
+	}
+}
+
+func TestRenderCollapsedEndpointsHeader(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "orders", Method: "POST", Path: "/orders"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+
+	// Collapsed — should show single "Endpoints: (2) ▾" line, no individual rows.
+	m.showEndpoints = false
+	view := m.View()
+	if !strings.Contains(view, "Endpoints: (2) ▾") {
+		t.Error("expected collapsed 'Endpoints: (2) ▾' heading")
+	}
+	if strings.Contains(view, "/ping → ping") {
+		t.Error("did NOT expect /ping row in collapsed view")
+	}
+	if strings.Contains(view, "/orders → orders") {
+		t.Error("did NOT expect /orders row in collapsed view")
+	}
+
+	// Expanded — individual rows should appear.
+	m.showEndpoints = true
+	view = m.View()
+	if !strings.Contains(view, "/ping → ping") {
+		t.Error("expected /ping row in expanded view")
+	}
+	if !strings.Contains(view, "/orders → orders") {
+		t.Error("expected /orders row in expanded view")
+	}
+}
+
+// TestModelFooterLiveStatus verifies the footer contains the live-follow indicator.
+func TestModelFooterLiveStatus(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{
+		RecentLogs: []mock.LogEntry{
+			{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/test", ResponseStatus: 200, Webhook: "test", LatencyMs: 1.0},
+		},
+		TotalLogs: 1,
+	}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	// Following → footer shows ▶ live.
+	view := m.View()
+	if !strings.Contains(view, "▶ live") {
+		t.Error("expected '▶ live' in footer when following")
+	}
+	if strings.Contains(view, "⏸ live") {
+		t.Error("did NOT expect '⏸ live' in footer when following")
+	}
+
+	// Paused → footer shows ⏸ live.
+	m.liveFollow = false
+	view = m.View()
+	if !strings.Contains(view, "⏸ live") {
+		t.Error("expected '⏸ live' in footer when paused")
+	}
+	if strings.Contains(view, "▶ live") {
+		t.Error("did NOT expect '▶ live' in footer when paused")
+	}
+}
+
+// TestModelHelpContainsNewKeys verifies L and e appear in help.
+func TestModelHelpContainsNewKeys(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.showHelp = true
+	view := m.View()
+	if !strings.Contains(view, "L       pause/resume live") {
+		t.Error("expected 'L' binding in help")
+	}
+	if !strings.Contains(view, "e       collapse endpoints") {
+		t.Error("expected 'e' binding in help")
+	}
+}

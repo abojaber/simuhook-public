@@ -96,7 +96,7 @@ And   e does nothing while the filter prompt is active
 
 ### UXR-005 — Auto-collapse + layout adaptation `[Should]`
 
-**Status:** `ready` | **Phase:** 3
+**Status:** `done` | **Phase:** 3 | **Implemented:** `34bcd90`
 
 **Story:** As a developer, I want the dashboard to adapt to short/narrow terminals so that the feed never gets squeezed to zero rows.
 
@@ -119,6 +119,8 @@ Then  feed lines truncate from the right, dropping the latency segment first
 
 ### UXR-006 — Prompt UX polish: token highlight + inline validation `[Could]`
 
+**Status:** `ready` | **Phase:** 4
+
 **Story:** As a developer, I want live filter feedback while typing so that I can correct mistakes before pressing enter.
 
 **AC:**
@@ -139,6 +141,8 @@ Then  the filter applies as today
 ---
 
 ### UXR-007 — Filter chip in endpoints panel header `[Could]`
+
+**Status:** `ready` | **Phase:** 4
 
 **Story:** As a developer, I want the active filter visible in the endpoints panel so that I know the panel is filtered without looking at the footer.
 
@@ -170,7 +174,7 @@ And   pressing c or esc clears both the chip and the footer filter text
 |-------|---------|-------|------|
 | **1** | UXR-001, UXR-002 | Status tinting + per-endpoint stats (render-only, no layout change) | low | **DONE `28dfd5f`** |
 | **2** | UXR-003, UXR-004 | `L` pause + `e` collapse (Model state + viewport resize) | medium — viewport re-sizing is the fiddly part | **DONE `ed288ac`** |
-| **3** | UXR-005 | Layout adaptation (auto-collapse, width truncation) | medium — interacts with phase 2 sizes |
+| **3** | UXR-005 | Layout adaptation (auto-collapse, width truncation) | medium — interacts with phase 2 sizes | **DONE `34bcd90`** |
 | **4** | UXR-006, UXR-007 | Prompt polish + filter chip | low |
 | **5** | UXR-008 | Row expansion | deferred — needs design decision |
 

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,6 +32,11 @@ func main() {
 	}
 	if v := os.Getenv("LOG_DIR"); v != "" {
 		*logDir = v
+	}
+
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
 	}
 
 	registry := mock.NewRegistry()
@@ -287,16 +294,23 @@ func main() {
 		fmt.Printf("%s  %s %s → %s  (%s)\n", timeStr, methodPad, r.URL.Path, statusLine, label)
 	})
 
+	srv := &http.Server{Addr: *addr, Handler: mux}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		log.Printf("listening on %s", *addr)
-		if err := http.ListenAndServe(*addr, mux); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
 	}()
 
 	<-done
 	fmt.Println("\nshutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }

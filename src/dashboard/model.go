@@ -39,6 +39,9 @@ type Model struct {
 	// UXR-003 / UXR-004 — live-follow and collapsible endpoints panel.
 	liveFollow    bool
 	showEndpoints bool
+
+	// UXR-005 — tracks whether endpoints were auto-collapsed (short terminal).
+	autoCollapsed bool
 }
 
 func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
@@ -53,7 +56,18 @@ func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
 		showEndpoints: true,
 	}
 	m.refreshEndpoints()
-	m.view = viewport.New(w, h-m.headerHeight()-1)
+
+	// UXR-005 — auto-collapse endpoints panel on short terminals.
+	if m.height < 20 && len(m.endpoints) > 0 {
+		m.showEndpoints = false
+		m.autoCollapsed = true
+	}
+
+	vpHeight := h - m.headerHeight() - 1
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+	m.view = viewport.New(w, vpHeight)
 	return m
 }
 
@@ -102,8 +116,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// UXR-005 — auto-collapse/re-expand on terminal resize.
+		if m.height < 20 && len(m.endpoints) > 0 {
+			m.showEndpoints = false
+			m.autoCollapsed = true
+		} else if m.autoCollapsed {
+			m.showEndpoints = true
+			m.autoCollapsed = false
+		}
+		// else: user explicitly toggled — leave their choice alone.
+
 		m.view.Width = msg.Width
-		m.view.Height = msg.Height - m.headerHeight() - 1 // header + footer
+		vpHeight := m.height - m.headerHeight() - 1 // header + footer
+		if vpHeight < 1 {
+			vpHeight = 1
+		}
+		m.view.Height = vpHeight
 		m.syncFeed()
 		return m, nil
 	}
@@ -191,8 +220,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// UXR-004 — toggle endpoints panel collapse/expand.
 	case s == "e" && !m.prompting:
 		m.showEndpoints = !m.showEndpoints
+		m.autoCollapsed = false // user explicitly toggled — override auto-collapse
 		// Re-size the viewport to account for the new header height.
 		m.view.Height = m.height - m.headerHeight() - 1
+		if m.view.Height < 1 {
+			m.view.Height = 1
+		}
 		m.syncFeed()
 		return m, nil
 	}

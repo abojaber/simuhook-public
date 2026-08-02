@@ -1322,3 +1322,275 @@ func TestModelHelpContainsNewKeys(t *testing.T) {
 		t.Error("expected 'e' binding in help")
 	}
 }
+
+// ------------------- UXR-005 — layout adaptation -------------------
+
+func TestLayoutAutoCollapseShortHeight(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+
+	// Height 19 with endpoints → auto-collapsed.
+	m := newModel(src, eps, Config{}, 80, 19)
+	if m.showEndpoints {
+		t.Error("expected showEndpoints=false at height 19 with endpoints")
+	}
+	if !m.autoCollapsed {
+		t.Error("expected autoCollapsed=true at height 19 with endpoints")
+	}
+
+	// Height 20 → no auto-collapse, panel visible.
+	m2 := newModel(src, eps, Config{}, 80, 20)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints=true at height 20")
+	}
+	if m2.autoCollapsed {
+		t.Error("expected autoCollapsed=false at height 20")
+	}
+
+	// Height 19 with NO endpoints → no auto-collapse.
+	m3 := newModel(src, nil, Config{}, 80, 19)
+	if !m3.showEndpoints {
+		t.Error("expected showEndpoints=true at height 19 without endpoints")
+	}
+	if m3.autoCollapsed {
+		t.Error("expected autoCollapsed=false without endpoints")
+	}
+}
+
+func TestLayoutAutoCollapseExpandable(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "orders", Method: "POST", Path: "/orders"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+
+	// Auto-collapsed at height 19.
+	m := newModel(src, eps, Config{}, 80, 19)
+	if m.showEndpoints {
+		t.Fatal("expected auto-collapsed at height 19")
+	}
+
+	// Press e — should expand (user override).
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 := updated.(Model)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints=true after e on auto-collapsed panel")
+	}
+	if m2.autoCollapsed {
+		t.Error("expected autoCollapsed=false after user presses e")
+	}
+
+	// headerHeight must grow when expanded.
+	if m2.headerHeight() != 3+1+2 {
+		t.Errorf("expected headerHeight=%d expanded, got %d", 3+1+2, m2.headerHeight())
+	}
+
+	// Press e again — should re-collapse.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 = updated.(Model)
+	if m2.showEndpoints {
+		t.Error("expected showEndpoints=false after second e")
+	}
+	if m2.autoCollapsed {
+		t.Error("expected autoCollapsed still false (user override)")
+	}
+}
+
+func TestLayoutResizeReexpands(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+
+	// Start at height 19 — auto-collapsed.
+	m := newModel(src, eps, Config{}, 80, 19)
+	if m.showEndpoints {
+		t.Fatal("expected auto-collapsed at height 19")
+	}
+	if !m.autoCollapsed {
+		t.Fatal("expected autoCollapsed=true at height 19")
+	}
+
+	// Resize to height 24 — should re-expand because autoCollapsed was true.
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m2 := updated.(Model)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints=true after resize to height 24")
+	}
+	if m2.autoCollapsed {
+		t.Error("expected autoCollapsed=false after re-expand")
+	}
+}
+
+func TestLayoutResizeUserChoicePreserved(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+
+	// Start at height 19 — auto-collapsed.
+	m := newModel(src, eps, Config{}, 80, 19)
+
+	// User explicitly expands (press e — overrides auto-collapse).
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m2 := updated.(Model)
+	if !m2.showEndpoints {
+		t.Fatal("expected expanded after user e")
+	}
+	if m2.autoCollapsed {
+		t.Fatal("expected autoCollapsed=false after user e")
+	}
+
+	// Resize to height 19 again — the auto condition fires on EVERY resize,
+	// overriding the user choice. This is by design: resizing triggers a fresh
+	// layout decision.
+	updated, _ = m2.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
+	m2 = updated.(Model)
+	if m2.showEndpoints {
+		t.Error("expected showEndpoints=false — auto-condition overrides user choice on resize")
+	}
+	if !m2.autoCollapsed {
+		t.Error("expected autoCollapsed=true after resize below threshold")
+	}
+
+	// Resize to height 24 — autoCollapsed was true, so panel re-expands.
+	updated, _ = m2.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m2 = updated.(Model)
+	if !m2.showEndpoints {
+		t.Error("expected showEndpoints=true — re-expands when terminal is tall again")
+	}
+	if m2.autoCollapsed {
+		t.Error("expected autoCollapsed=false after re-expand")
+	}
+}
+
+func TestRenderConfigNarrow(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	cfg := Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}
+
+	// Width 80 — Admin URL present (80 is not < 80).
+	m := newModel(src, eps, cfg, 80, 24)
+	m.last = src.snap
+	view := m.View()
+	if !strings.Contains(view, "Admin: http://localhost:8080/_admin/endpoints") {
+		t.Error("expected Admin URL at width 80")
+	}
+
+	// Width 79 — Admin URL absent.
+	m2 := newModel(src, eps, cfg, 79, 24)
+	m2.last = src.snap
+	view2 := m2.View()
+	if strings.Contains(view2, "Admin:") {
+		t.Error("expected NO Admin URL at width 79")
+	}
+	// But the other segments still present.
+	for _, want := range []string{
+		"Address: :8080",
+		"Stubs: ../stubs",
+		"Log dir: logs",
+	} {
+		if !strings.Contains(view2, want) {
+			t.Errorf("expected %q in narrow config line", want)
+		}
+	}
+}
+
+func TestRenderFeedTruncatedNarrow(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: []mock.LogEntry{
+				{
+					Timestamp:      now,
+					Method:         "POST",
+					Path:           "/orders",
+					ResponseStatus: 201,
+					Webhook:        "order-placed",
+					LatencyMs:      5.0,
+				},
+			},
+			TotalLogs: 1,
+		},
+	}
+
+	// Width 60 — latency segment present (60 is not < 60).
+	m := newModel(src, nil, Config{}, 60, 24)
+	m.last = src.snap
+	m.renderFeed()
+	view := m.View()
+	if !strings.Contains(view, "(5.0ms)") {
+		t.Error("expected '(5.0ms)' latency at width 60")
+	}
+
+	// Width 59 — latency segment absent.
+	m2 := newModel(src, nil, Config{}, 59, 24)
+	m2.last = src.snap
+	m2.renderFeed()
+	view2 := m2.View()
+	if strings.Contains(view2, "(5.0ms)") {
+		t.Error("expected NO latency segment at width 59")
+	}
+
+	// But the rest of the line (time, method, path, status, label) still present.
+	if !strings.Contains(view2, "POST") {
+		t.Error("expected POST method in narrow feed")
+	}
+	if !strings.Contains(view2, "/orders") {
+		t.Error("expected /orders path in narrow feed")
+	}
+	if !strings.Contains(view2, "order-placed") {
+		t.Error("expected order-placed label in narrow feed")
+	}
+}
+
+func TestLayoutViewportHeightClamp(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "a", Method: "GET", Path: "/a"},
+			{ID: "b", Method: "GET", Path: "/b"},
+			{ID: "c", Method: "GET", Path: "/c"},
+			{ID: "d", Method: "GET", Path: "/d"},
+			{ID: "e", Method: "GET", Path: "/e"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+
+	// Height 5, width 80, 5 endpoints → auto-collapsed (height < 20).
+	// headerHeight = 3 + 1 (collapsed heading) = 4.
+	// viewport height = 5 - 4 - 1 = 0 → clamped to 1.
+	m := newModel(src, eps, Config{}, 80, 5)
+	if m.view.Height != 1 {
+		t.Errorf("expected viewport height clamped to 1, got %d", m.view.Height)
+	}
+	if m.showEndpoints {
+		t.Error("expected auto-collapsed at height 5")
+	}
+
+	// Resize to height 5 with endpoints already collapsed — viewport still clamped.
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 5})
+	m2 := updated.(Model)
+	if m2.view.Height != 1 {
+		t.Errorf("expected viewport height clamped to 1 after resize, got %d", m2.view.Height)
+	}
+
+	// Height 5, no endpoints — headerHeight = 3, viewport = 5-3-1 = 1 (no clamp needed).
+	m3 := newModel(src, nil, Config{}, 80, 5)
+	if m3.view.Height != 1 {
+		t.Errorf("expected viewport height 1, got %d", m3.view.Height)
+	}
+}

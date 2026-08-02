@@ -60,10 +60,18 @@ func (m Model) View() string {
 func (m Model) renderHeader() string {
 	title := styleHeader.Render("Simuhook Dashboard")
 
-	// Config line (from startup banner)
+	// Config line (from startup banner).
 	adminURL := "http://localhost" + m.cfg.Addr + "/_admin/endpoints"
-	configLine := fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s  Admin: %s",
-		m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir, adminURL)
+
+	var configLine string
+	if m.width < 80 {
+		// UXR-005 — narrow terminals: drop Admin URL.
+		configLine = fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s",
+			m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir)
+	} else {
+		configLine = fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s  Admin: %s",
+			m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir, adminURL)
+	}
 	config := styleMuted.Render(configLine)
 
 	// Stats line
@@ -194,14 +202,25 @@ func (m Model) buildFeed() string {
 			label = "unmatched"
 		}
 
-		fmt.Fprintf(&sb, "%s  %-5s %s → %s  %s  (%.1fms)\n",
-			timeStr,
-			entry.Method,
-			entry.Path,
-			tint(entry.ResponseStatus),
-			label,
-			entry.LatencyMs,
-		)
+		if m.width < 60 {
+			// UXR-005 — narrow terminals: drop latency segment.
+			fmt.Fprintf(&sb, "%s  %-5s %s → %s  %s\n",
+				timeStr,
+				entry.Method,
+				entry.Path,
+				tint(entry.ResponseStatus),
+				label,
+			)
+		} else {
+			fmt.Fprintf(&sb, "%s  %-5s %s → %s  %s  (%.1fms)\n",
+				timeStr,
+				entry.Method,
+				entry.Path,
+				tint(entry.ResponseStatus),
+				label,
+				entry.LatencyMs,
+			)
+		}
 	}
 
 	if !anyMatched && m.filter != (Filter{}) {

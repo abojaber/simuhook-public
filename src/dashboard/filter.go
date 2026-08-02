@@ -70,6 +70,20 @@ func ParseFilter(expr string) (Filter, bool) {
 	return f, true
 }
 
+// BadStatusToken returns the first status:token whose value is not a valid
+// integer. Returns "" if all status tokens are valid or none exist.
+func BadStatusToken(expr string) string {
+	tokens := strings.Fields(expr)
+	for _, tok := range tokens {
+		if strings.HasPrefix(tok, "status:") {
+			if _, err := strconv.Atoi(tok[7:]); err != nil {
+				return tok
+			}
+		}
+	}
+	return ""
+}
+
 // Matches reports whether the entry passes the filter.
 func (f Filter) Matches(e mock.LogEntry) bool {
 	if f.Method != "" && !strings.EqualFold(f.Method, e.Method) {

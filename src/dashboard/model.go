@@ -33,6 +33,7 @@ type Model struct {
 	// Filtering and prompt state.
 	filter    Filter
 	prompt    string
+	promptErr string
 	prompting bool
 	showHelp  bool
 
@@ -156,6 +157,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.prompting {
 			m.prompting = false
 			m.prompt = ""
+			m.promptErr = ""
 			return m, nil
 		}
 		return m, tea.Quit
@@ -164,6 +166,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case (s == "/" || s == "f") && !m.prompting:
 		m.prompting = true
 		m.prompt = ""
+		m.promptErr = ""
 		return m, nil
 
 	// Apply filter from prompt.
@@ -171,11 +174,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		f, ok := ParseFilter(m.prompt)
 		if ok {
 			m.filter = f
+			m.prompting = false
+			m.prompt = ""
+			m.promptErr = ""
+			m.renderFeed()
+			m.syncFeed()
+			return m, nil
 		}
-		m.prompting = false
-		m.prompt = ""
-		m.renderFeed()
-		m.syncFeed()
+		// UXR-006 — invalid filter: stay in prompt, show inline error.
+		m.promptErr = "invalid status: " + BadStatusToken(m.prompt)
 		return m, nil
 
 	// Escape: cancel prompt or clear filter.
@@ -183,6 +190,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.prompting {
 			m.prompting = false
 			m.prompt = ""
+			m.promptErr = ""
 		} else {
 			m.filter = Filter{}
 			m.renderFeed()
@@ -237,8 +245,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(m.prompt) > 0 {
 				m.prompt = m.prompt[:len(m.prompt)-1]
 			}
+			m.promptErr = ""
 		case msg.Type == tea.KeyRunes:
 			m.prompt += string(msg.Runes)
+			m.promptErr = ""
 		}
 		return m, nil
 	}

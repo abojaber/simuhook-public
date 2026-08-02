@@ -569,6 +569,9 @@ func TestModelPromptView(t *testing.T) {
 	}
 }
 
+// TestModelInvalidFilterStatus verifies UXR-006 inline validation: an invalid
+// status (e.g. status:abc) keeps the prompt open with an error so the user can
+// fix it in place instead of losing their input.
 func TestModelInvalidFilterStatus(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 	m := newModel(src, nil, Config{}, 80, 24)
@@ -583,14 +586,20 @@ func TestModelInvalidFilterStatus(t *testing.T) {
 		m2 = updated.(Model)
 	}
 
-	// Press enter — invalid filter, should be ignored (ok=false)
+	// Press enter — invalid filter stays in prompt with error.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m2 = updated.(Model)
 	if m2.filter != (Filter{}) {
 		t.Error("expected unchanged filter when status:abc is invalid")
 	}
-	if m2.prompting {
-		t.Error("expected not prompting after enter with invalid filter")
+	if !m2.prompting {
+		t.Error("expected still prompting after enter with invalid status")
+	}
+	if m2.promptErr == "" {
+		t.Error("expected non-empty promptErr for invalid status")
+	}
+	if m2.prompt != "status:abc" {
+		t.Errorf("expected prompt preserved, got %q", m2.prompt)
 	}
 }
 
@@ -1592,5 +1601,335 @@ func TestLayoutViewportHeightClamp(t *testing.T) {
 	m3 := newModel(src, nil, Config{}, 80, 5)
 	if m3.view.Height != 1 {
 		t.Errorf("expected viewport height 1, got %d", m3.view.Height)
+	}
+}
+
+// ------------------- UXR-006 — prompt polish (token highlight + inline validation) -------------------
+
+func TestRenderPromptHighlight(t *testing.T) {
+	// Force TrueColor so lipgloss emits ANSI sequences even in non-TTY tests.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	m.prompting = true
+	m.prompt = "ep:ping orders"
+
+	view := m.View()
+
+	// accent colour (cyan 39) should wrap recognised prefix tokens.
+	accentANSI := "\x1b[38;5;39mep:ping"
+	mutedANSI := "\x1b[38;5;240morders"
+
+	if !strings.Contains(view, accentANSI) {
+		t.Errorf("expected %q token highlighted with accent, got view:\n%s", "ep:ping", view)
+	}
+	if !strings.Contains(view, mutedANSI) {
+		t.Errorf("expected bare token %q to stay muted, got view:\n%s", "orders", view)
+	}
+	// The bare text must NOT be wrapped in accent colour.
+	if strings.Contains(view, "\x1b[38;5;39morders") {
+		t.Error("bare text 'orders' must NOT be highlighted in accent colour")
+	}
+}
+
+func TestRenderPromptHighlightAllTokens(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	m.prompting = true
+	m.prompt = "ep:ping method:POST status:2"
+
+	view := m.View()
+
+	// All three recognised prefix tokens should be accent-highlighted.
+	for _, tok := range []string{"ep:ping", "method:POST", "status:2"} {
+		want := "\x1b[38;5;39m" + tok
+		if !strings.Contains(view, want) {
+			t.Errorf("expected %q highlighted in accent", tok)
+		}
+	}
+}
+
+func TestRenderPromptHighlightEmpty(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	m.prompting = true
+	m.prompt = ""
+
+	view := m.View()
+
+	// Should render "filter: ▌  esc cancel · enter apply" without any accent.
+	if !strings.Contains(view, "filter:") {
+		t.Error("expected 'filter:' in prompt bar")
+	}
+	if !strings.Contains(view, "esc cancel") {
+		t.Error("expected 'esc cancel' in prompt bar")
+	}
+	// No accent ANSI should appear (no tokens to highlight).
+	if strings.Contains(view, "\x1b[38;5;39m") {
+		t.Error("expected no accent ANSI in empty prompt")
+	}
+}
+
+func TestModelPromptInvalidStatus(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+
+	// Type invalid status filter
+	for _, r := range "status:abc" {
+		updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m2 = updated.(Model)
+	}
+
+	// Press enter — stays in prompt with error.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected still prompting after invalid enter")
+	}
+	if m2.promptErr == "" {
+		t.Fatal("expected non-empty promptErr after invalid enter")
+	}
+	if m2.prompt != "status:abc" {
+		t.Fatalf("expected prompt preserved, got %q", m2.prompt)
+	}
+
+	// Backspace to clear prompt and promptErr, then type valid filter.
+	// First clear all existing chars.
+	for len(m2.prompt) > 0 {
+		updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m2 = updated.(Model)
+	}
+	if m2.promptErr != "" {
+		t.Error("expected promptErr cleared after editing")
+	}
+
+	// Type valid status filter
+	for _, r := range "status:200" {
+		updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m2 = updated.(Model)
+	}
+
+	// Press enter — should apply.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = updated.(Model)
+	if m2.prompting {
+		t.Error("expected not prompting after valid enter")
+	}
+	if m2.filter.Status != 200 {
+		t.Errorf("expected filter.Status=200, got %d", m2.filter.Status)
+	}
+	if m2.promptErr != "" {
+		t.Errorf("expected empty promptErr after valid enter, got %q", m2.promptErr)
+	}
+}
+
+func TestModelPromptErrClearsOnEdit(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Manually set prompt error state (simulating after invalid enter).
+	m.prompting = true
+	m.prompt = "status:abc"
+	m.promptErr = "invalid status: status:abc"
+
+	// Backspace clears error.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m2 := updated.(Model)
+	if m2.promptErr != "" {
+		t.Error("expected promptErr cleared after backspace")
+	}
+
+	// Set error again and type a character — should clear.
+	m2.promptErr = "invalid status: status:abc"
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m2 = updated.(Model)
+	if m2.promptErr != "" {
+		t.Error("expected promptErr cleared after typing rune")
+	}
+}
+
+func TestRenderPromptErrShows(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 120, 30)
+	m.prompting = true
+	m.prompt = "status:abc"
+	m.promptErr = "invalid status: status:abc"
+
+	view := m.View()
+
+	if !strings.Contains(view, "✗") {
+		t.Error("expected '✗' error marker in prompt bar")
+	}
+	if !strings.Contains(view, "invalid status:") {
+		t.Error("expected 'invalid status:' text in prompt bar")
+	}
+
+	// Error text should be in red (196).
+	redANSI := "\x1b[38;5;196m"
+	if !strings.Contains(view, redANSI) {
+		t.Error("expected red ANSI (196) for error text")
+	}
+}
+
+func TestModelPromptErrClearedOnCancel(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Simulate prompt with error after invalid enter.
+	m.prompting = true
+	m.prompt = "status:abc"
+	m.promptErr = "invalid status: status:abc"
+
+	// Cancel with esc.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 := updated.(Model)
+	if m2.promptErr != "" {
+		t.Error("expected promptErr cleared after esc cancel")
+	}
+	if m2.prompting {
+		t.Error("expected not prompting after esc cancel")
+	}
+
+	// Cancel with q also clears.
+	m.prompting = true
+	m.promptErr = "invalid status: status:abc"
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m2 = updated.(Model)
+	if m2.promptErr != "" {
+		t.Error("expected promptErr cleared after q cancel")
+	}
+}
+
+// ------------------- UXR-007 — filter chip in endpoints panel header -------------------
+
+func TestRenderFilterChip(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "orders", Method: "POST", Path: "/orders"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+
+	// No filter → no chip in heading.
+	view := m.View()
+	if strings.Contains(view, "[ep:") || strings.Contains(view, "[method:") || strings.Contains(view, "[status:") {
+		t.Error("expected no filter chip when filter is empty")
+	}
+
+	// Set filter → chip appears in expanded heading.
+	m.filter = Filter{Endpoint: "ping"}
+	view = m.View()
+	if !strings.Contains(view, "[ep:ping]") {
+		t.Errorf("expected '[ep:ping]' chip in expanded heading, got view:\n%s", view)
+	}
+
+	// Chip should be in accent colour (39).
+	chipANSI := "\x1b[38;5;39m[ep:ping]"
+	if !strings.Contains(view, chipANSI) {
+		t.Error("expected chip wrapped in accent colour (39)")
+	}
+
+	// Collapsed → chip still appears in the collapsed heading.
+	m.showEndpoints = false
+	view = m.View()
+	if !strings.Contains(view, "[ep:ping]") {
+		t.Error("expected '[ep:ping]' chip in collapsed heading")
+	}
+}
+
+func TestRenderFilterChipZero(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+
+	// Zero filter → no chip.
+	m.filter = Filter{}
+	view := m.View()
+
+	if strings.Contains(view, "[ep:") {
+		t.Error("expected no chip with zero filter")
+	}
+	if strings.Contains(view, "[method:") {
+		t.Error("expected no chip with zero filter")
+	}
+}
+
+func TestFilterChipClears(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+	m.filter = Filter{Endpoint: "ping"}
+
+	// 'c' clears filter → chip gone.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m2 := updated.(Model)
+	view := m2.View()
+	if strings.Contains(view, "[ep:") {
+		t.Error("expected no filter chip after 'c' clear")
+	}
+
+	// Set again, esc (non-prompt) clears → chip gone.
+	m.filter = Filter{Endpoint: "ping"}
+	m.last = src.snap
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 = updated.(Model)
+	view = m2.View()
+	if strings.Contains(view, "[ep:") {
+		t.Error("expected no filter chip after esc clear")
+	}
+}
+
+func TestRenderFilterChipCollapsed(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "orders", Method: "POST", Path: "/orders"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+	m.showEndpoints = false // collapsed
+	m.filter = Filter{Endpoint: "ping"}
+
+	view := m.View()
+
+	// Collapsed heading should show the count AND the chip.
+	if !strings.Contains(view, "Endpoints: (2) ▾") {
+		t.Error("expected collapsed 'Endpoints: (2) ▾' heading")
+	}
+	if !strings.Contains(view, "[ep:ping]") {
+		t.Error("expected '[ep:ping]' chip in collapsed heading")
 	}
 }

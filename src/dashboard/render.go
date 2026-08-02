@@ -12,6 +12,8 @@ import (
 var (
 	styleHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
 	styleMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleAccent = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	styleError  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
 // ------------------- UXR-001 helpers -------------------
@@ -32,6 +34,17 @@ func tint(status int) string {
 	default:
 		return styleMuted.Render(s)
 	}
+}
+
+// ------------------- UXR-007 helper -------------------
+
+// endpointHeading builds the endpoints panel heading line. When a filter is
+// active, a chip (e.g. [ep:ping]) is appended in the accent colour.
+func (m Model) endpointHeading(base string) string {
+	if m.filter != (Filter{}) {
+		return styleMuted.Render(base) + "  " + styleAccent.Render("["+m.filter.String()+"]")
+	}
+	return styleMuted.Render(base)
 }
 
 // View renders the full dashboard.
@@ -93,7 +106,8 @@ func (m Model) renderHeader() string {
 	// Endpoints list
 	if len(m.endpoints) > 0 {
 		if m.showEndpoints {
-			var epParts []string
+			headingLine := m.endpointHeading("Endpoints:")
+			epParts := make([]string, 0, len(m.endpoints))
 			for _, ep := range m.endpoints {
 				method := ep.Method
 				if method == "" {
@@ -112,11 +126,12 @@ func (m Model) renderHeader() string {
 
 				epParts = append(epParts, left)
 			}
-			endpoints := styleMuted.Render("Endpoints:") + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
+			endpoints := headingLine + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
 			parts = append(parts, endpoints)
 		} else {
 			// UXR-004 — collapsed endpoints panel: single "Endpoints: (N) ▾" line.
-			collapsed := styleMuted.Render(fmt.Sprintf("Endpoints: (%d) ▾", len(m.endpoints)))
+			// UXR-007 — filter chip appended when active.
+			collapsed := m.endpointHeading(fmt.Sprintf("Endpoints: (%d) ▾", len(m.endpoints)))
 			parts = append(parts, collapsed)
 		}
 	}
@@ -158,8 +173,31 @@ func (m Model) renderFooter() string {
 }
 
 // renderPromptBar builds the prompt line shown when the user is typing a filter.
+// UXR-006 — recognised prefixes (ep:, method:, status:) are highlighted in the
+// accent colour; bare text stays muted. An inline ✗ error is shown when the
+// last parse failed, so the user can fix the input without leaving the prompt.
 func (m Model) renderPromptBar() string {
-	return styleMuted.Render("filter: " + m.prompt + "▌" + "  esc cancel · enter apply")
+	var parts []string
+	parts = append(parts, styleMuted.Render("filter:"))
+
+	// Tokenize and highlight each token.
+	tokens := strings.Fields(m.prompt)
+	for _, tok := range tokens {
+		if strings.HasPrefix(tok, "ep:") || strings.HasPrefix(tok, "method:") || strings.HasPrefix(tok, "status:") {
+			parts = append(parts, styleAccent.Render(tok))
+		} else {
+			parts = append(parts, styleMuted.Render(tok))
+		}
+	}
+
+	result := strings.Join(parts, " ") + "▌"
+
+	if m.promptErr != "" {
+		result += "  " + styleError.Render("✗ "+m.promptErr)
+	}
+
+	result += "  " + styleMuted.Render("esc cancel · enter apply")
+	return result
 }
 
 // renderHelp builds a help panel showing key bindings.

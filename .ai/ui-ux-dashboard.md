@@ -100,7 +100,7 @@ Terminal layout is a fixed grid of **zones**. Sizes adapt to terminal height; th
 1. **No dead ends.** Every key has a visible escape (`esc` cancels anything). Prompt swallows navigation keys — never trapped mid-typing.
 2. **Stable layout.** Zones never jump; only *content* changes on refresh. (Fix already applied for endpoint order.)
 3. **Live-follow by default, manual scroll wins.** If the user scrolled up, keep the offset until they scroll back down (`g` or new `L`).
-4. **Filter is visible state.** An active filter is always shown in the footer AND a compact chip in the endpoints panel header.
+4. **Filter is visible state.** An active filter is always shown in the footer AND a compact chip in the panel header. (Phase 6 `544db99`: chip lives on the REGISTERED ENDPOINTS panel header while that panel is visible; when the panel is hidden via `e`/auto-collapse, it relocates to the LIVE REQUEST STREAM panel header — per the wide-layout key-binding decision.)
 
 ### 4.3 Prompt UX
 - Prompt bar replaces the footer; the rest of the screen stays visible (context preserved).
@@ -125,7 +125,7 @@ Terminal layout is a fixed grid of **zones**. Sizes adapt to terminal height; th
 
 ## 6. Layout Adaptation
 
-- **Minimum size:** 80×24 (target). Below 80 cols: config collapses to one line, stats strip drops p95→avg only.
+- **Minimum size:** 80×24 (target, legacy vertical layout). **Primary two-column layout (UXR-009/010/011, `544db99`): minimum 98×14 — threshold `wideMinWidth=100`, `wideMinHeight=14`**; below that the dashboard renders byte-identical to the legacy vertical layout. Below 80 cols: config collapses to one line, stats strip drops p95→avg only.
 - **Height < 20:** endpoints panel collapses automatically (still visible via `e`).
 - **Width < 60:** feed lines truncate from the right (method/path kept, latency dropped first).
 - The viewport always owns the remaining space; never render the feed taller than the screen.

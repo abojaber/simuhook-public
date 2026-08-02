@@ -2,6 +2,12 @@
 
 ## Current Session
 
+### 2026-08-03 — UX Phase 6: two-column dashboard redesign (UXR-009/010/011)
+
+- **Implemented and verified.** At width ≥ 100 × height ≥ 14 the dashboard renders the redesigned layout: title row with `[ Pause Stream ]` button, SERVER INFO chips, muted log-dir/admin line, METRICS chips, and two `RoundedBorder` panels at fixed 40/60 — left REGISTERED ENDPOINTS table (Method|Endpoint|Stub|Req|p95, own scrollable viewport via shift+↑/↓/K/J), right LIVE REQUEST STREAM table (Time|Method|Path|Stub|Status). Below the threshold it falls back byte-identical to the legacy vertical layout. `e` hides the left panel. UXR-008 enter-expansion, UXR-007 chip relocation, UXR-002 Req data, UXR-010 pause all preserved. `ep.Path`/`ep.ID` now also sanitized (unauthenticated admin API = injection vector).
+- **Process note:** QA's first pass returned NOT VERIFIED on a suspected 0-endpoint wide-layout panic that was never actually reproduced. The BA ran a 420-combination race-enabled sweep (7 widths × 5 heights × 4 endpoint counts × 3 log counts, incl. all 0-endpoint wide combos) — **zero panics**; a live "endpoints drop to zero at runtime" test also passes. Confirmed a QA false positive (the 191/198 panic only appears in an unnatural loop creating hundreds of fresh models). Added `TestLayoutWideZeroEndpoints` to permanently lock the case; QA re-verified 16/16 ACs. Lesson: when a QA defect conflicts with an empirical sweep, reproduce before sending back to the developer.
+- 42 new tests (137 total), dashboard coverage 94.8%, race + vet clean. Committed `544db99`.
+
 ### 2026-08-02 — UXR-008 feed row expansion (Phase 5) done
 
 - **UXR-008 (Phase 5) implemented and verified.** `enter` on a feed row (top visible line, selection derived from `view.YOffset` — no list widget) expands request detail: request_id, matched, full RFC3339Nano timestamp, headers, query, body. `enter` collapses; `esc`/`c` also collapse and resume live-follow.

@@ -628,3 +628,54 @@ func TestModelCtrlHBackspace(t *testing.T) {
 		t.Errorf("expected empty prompt after ctrl+h, got %q", m2.prompt)
 	}
 }
+
+// TestModelPromptBatchedTextWithQ documents the intended behavior when bubbletea
+// batches fast keystrokes into a single KeyMsg: a 'q' that is part of typed
+// filter text (e.g. "ep:queue") is preserved as text, NOT treated as a cancel.
+// This is by design — filters may legitimately contain the letter 'q'.
+// A standalone 'q' press (separate KeyMsg) still cancels (TestModelPromptQuit).
+func TestModelPromptBatchedTextWithQ(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	// Enter prompt mode
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting after '/'")
+	}
+
+	// Simulate fast typing: bubbletea delivers "ep:queue" as ONE KeyMsg.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ep:queue")})
+	m2 = updated.(Model)
+	if m2.prompt != "ep:queue" {
+		t.Errorf("expected prompt='ep:queue', got %q", m2.prompt)
+	}
+	if !m2.prompting {
+		t.Error("expected still prompting after typed text")
+	}
+}
+
+// TestModelPromptEscCancelsFromBatched verifies esc after typed text cancels the
+// prompt entirely (regression: esc must cancel even after batched text entry).
+func TestModelPromptEscCancelsFromBatched(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, 80, 24)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ep:ping")})
+	m2 = updated.(Model)
+
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 = updated.(Model)
+	if m2.prompting {
+		t.Error("expected prompting=false after esc")
+	}
+	if m2.prompt != "" {
+		t.Errorf("expected prompt cleared after esc, got %q", m2.prompt)
+	}
+	if m2.filter != (Filter{}) {
+		t.Error("expected filter unchanged/empty after esc-cancel")
+	}
+}

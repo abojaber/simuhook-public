@@ -2,33 +2,47 @@
 
 ## Overview
 
-A Go CLI that simulates incoming webhook requests. Users define webhook configurations (endpoint URL, HTTP method, headers, payload template, delivery interval/batch), and the simulator dispatches them to target URLs on schedule.
+Simuhook is a mock HTTP server written in Go. Users define endpoints as YAML files in a `stubs/` directory. The server watches the directory, matches incoming requests against the stubs, and returns configured responses. Stub changes are hot-reloaded live without restart. Every request is logged as a JSON line, and an optional full-screen TUI dashboard shows live stats.
 
 ## Commands
 
-- `simuhook serve` — Start the HTTP server
-- `simuhook config` — Manage webhook configurations
-- `simuhook logs` — View delivery logs
+- `simuhook` — single command. Flags:
+  - `--addr :8080` — listen address (env `PORT`)
+  - `--stubs ../stubs` — stubs directory (env `STUBS_DIR`)
+  - `--log-dir logs` — log directory (env `LOG_DIR`)
+  - `--tui auto|on|off` — dashboard mode. `auto` (default): TUI on a TTY, line output otherwise.
+  - `--recent N` (default 50) — recent-log ring buffer size (also the TUI feed depth)
+  - `--help`, `--version` per CLI conventions
 
 ## Components
 
 ```
 src/
-├── main.go              # Entry point
+├── main.go               # Entry point: flags, banner, HTTP server, shutdown
+├── dashboard/            # bubbletea TUI dashboard
+│   ├── dashboard.go      # Run() — program entry (alternate screen)
+│   ├── model.go          # tea.Model, StatsSource, tick/prompt/key handling
+│   ├── render.go         # header/feed/footer/help rendering (lipgloss)
+│   ├── filter.go         # Filter, ParseFilter, Matches (pure, tea-free)
+│   └── *_test.go
 └── mock/
-    ├── types.go         # Endpoint, Response structs
-    ├── registry.go      # Store, match, CRUD endpoints
-    ├── server.go        # HTTP handler
-    ├── stub.go          # YAML stub file parser
-    ├── logger.go        # Request logging (JSON Lines)
-    └── watcher.go       # File watcher (hot-reload)
+    ├── types.go          # Endpoint, Response structs
+    ├── registry.go       # Store, match, CRUD endpoints (thread-safe)
+    ├── server.go         # mock.Server HTTP handler (see WS-017 note)
+    ├── stub.go           # YAML stub file parser
+    ├── logger.go         # LogEntry, JSON Lines logging
+    ├── stats.go          # StatsTracker: counts, ring, latency stats, Notify
+    ├── templating.go     # Body/header template execution
+    └── watcher.go        # File watcher (hot-reload)
 
-stubs/                   # YAML stub definitions
+stubs/                    # YAML stub definitions
 ├── health.yaml
-├── order-placed.yaml
 ├── ping.yaml
-└── user-create.yaml
+├── order-placed.yaml
+└── ...
 ```
+
+Dependency direction: `main → dashboard → mock`. Nothing in `mock` imports `dashboard` or `main`.
 
 ## API
 
@@ -40,23 +54,48 @@ stubs/                   # YAML stub definitions
 | PUT | `/_admin/endpoints/{id}` | Update endpoint |
 | DELETE | `/_admin/endpoints/{id}` | Remove endpoint |
 
+All other paths are the mock surface: requests are matched against stubs and answered with the configured response. Matched and unmatched requests are both logged.
+
 ## Data Flow
 
-1. YAML stubs loaded from `stubs/` directory at startup
-2. File watcher hot-reloads changes live
-3. HTTP server matches incoming requests against stubs
-4. Matched requests get configured response (with optional delay)
-5. Every request logged as JSON line to `logs/<webhook-id>.log`
-6. Unmatched requests go to `logs/_unmatched.log`
+1. YAML stubs loaded from `stubs/` at startup; watcher hot-reloads changes live
+2. HTTP server binds early (`net.Listen` before any UI output — fail fast on port conflicts)
+3. Incoming requests matched against stubs (method, path, headers, query, body)
+4. Matched requests get configured response (status, headers, body, optional delay, echo/template modes)
+5. Every request logged as a JSON line to `logs/<webhook-id>.log`; unmatched go to `logs/_unmatched.log`
+6. `StatsTracker.RecordRequest` updates counts + latency aggregations; the dashboard polls via `Snapshot()`
 
 ## Key Decisions
 
-### Internal packages
-- `config`, `webhook`, `dispatcher`, `storage`, `api` — package structure follows standard Go layout
+### WS-010 — Interactive TUI dashboard (`[Could]`, done)
+- **Framework:** bubbletea v1.3.10 + lipgloss v1.1.0 + bubbles v1.0.0 (viewport only — no list/textinput). First external UI dependency; approved to override stdlib-first for UI only.
+- **`--tui auto|on|off`**: `auto` detects a TTY (`golang.org/x/term.IsTerminal`); non-TTY falls back to the WS-016 per-request line output. **No breaking change:** line output and startup banner remain when TUI is disabled; `--tui on` forces the TUI even on a non-TTY.
+- **Live updates — coalesced signal + pull:** `StatsTracker.Notify()` (buffered(1), non-blocking, coalescing) signals a pump goroutine which calls `Program.Send` at ≤10 Hz; the model re-reads `Snapshot()` on each tick. `Program.Send` is unbuffered and blocks, so it is NEVER called on the request path.
+- **StatsTracker latency:** exact `Count/Sum/Min/Max` accumulators over ALL requests plus a fixed 92-bucket logarithmic histogram (4 sub-buckets × 23 octaves, 0.01 ms → ~84 s) for an approximate p95 (interpolated, clamped to `[Min,Max]`). `LatencyStats.Avg()` is the single division and is guarded against `Count==0` (no NaN/div-zero).
+- **Signal ownership:** in TUI mode bubbletea owns SIGINT/SIGTERM (its `handleSignals` registers `signal.Notify(sig, SIGINT, SIGTERM)`; SIGINT → `InterruptMsg`, SIGTERM → `QuitMsg`). `main.go` therefore does NOT register `signal.Notify` in TUI mode. After `p.Run()` returns (q/Ctrl+C/SIGTERM), `srv.Shutdown(ctx)` drains with a 5 s timeout. Non-TUI mode keeps the explicit `signal.Notify` + `<-done` path.
+- **Log redirection:** when TUI is active, `log.SetOutput(<log-dir>/server.log)` so watcher/stub reload messages can't corrupt the alternate screen. Request logs still go to their own files via `logger.Log`.
+- **Filtering:** `Filter{Endpoint, Method, Status, Text}` with `ParseFilter` (`ep:`/`method:`/`status:` prefixes + bare text) is pure and tea-free. Applied at render time only; the ring buffer is never mutated. Prompt mode (`/` or `f`) swallows all keys except backspace/enter/esc/ctrl+c; `q` cancels the prompt before quitting.
+- **Sticky-bottom feed:** `syncFeed()` checks `viewport.AtBottom()` before `SetContent`, re-anchoring to bottom only if the user was following live; manual scroll offsets survive live updates.
+- **Keys:** `q`/`ctrl+c` quit, `r` refresh, `/`/`f` filter prompt, `enter` apply, `esc` cancel/clear, `c` clear, `?` help; scrolling via viewport DefaultKeyMap (`↑/k`, `↓/j`, `pgup/pgdn`, `g/G`).
+- **Startup order:** `net.Listen` → registry/watcher/load → TUI decision → logger + log redirect → banner (non-TUI only) → mux/server → `dashboard.Run` (blocks) → `srv.Shutdown`.
+
+### Stubs and matching
+- YAML stubs support: method, path, query match, header match, payload match, response status/body/headers, `delay`, `echo`, `template` modes, and multiple response variants with weights (round-robin on equal weight).
+- Hot reload via fsnotify; every reload is logged.
+
+### Internal packages / conventions
 - `net/http` (stdlib) — no external HTTP framework
+- Interfaces for testability (`StatsSource` for the dashboard; `http.RoundTripper` when mocking HTTP)
+- Graceful shutdown on SIGINT/SIGTERM
+- Idempotency support via `X-Idempotency-Key` header
+- All decisions traceable to a user story or requirement (see `.ai/requirements/`)
 
 ### Deliverables
 - Runnable Go binary: `simuhook`
-- REST API for CRUD on webhook configurations
-- Background dispatcher that fires webhooks on schedule
-- Delivery log with status, response code, latency, and retry count
+- REST admin API for CRUD on endpoints
+- Live TUI dashboard with counts, latency stats, filterable recent-log feed
+- JSON Lines delivery log with status, latency, headers, body, query
+
+## Open Items
+
+- **WS-017** (`[Could]`, backlog): duplicate `mock.Server` handler — referenced only from `server_test.go`; main.go uses its own inline handler with logging/stats. Two divergent implementations of the core matching path. Options: unify into `mock.Server` or delete it and test the real handler.

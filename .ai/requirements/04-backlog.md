@@ -90,6 +90,8 @@ Then  the view refreshes immediately
 
 ### WS-010c — Log feed filtering and scrolling
 
+**Status:** `done` | **Commit:** `1bc7aeb`
+
 **User Story:**
 > As a developer, I want to filter and scroll the recent-log feed so that I can inspect a specific endpoint's traffic during a demo.
 

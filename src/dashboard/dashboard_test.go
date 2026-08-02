@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"simuhook/mock"
 )
 
@@ -775,4 +777,171 @@ func ids(eps []*mock.Endpoint) []string {
 		out = append(out, e.ID)
 	}
 	return out
+}
+
+// ------------------- UXR-001 — status-code tinting -------------------
+
+func TestRenderStatusTint(t *testing.T) {
+	// Force TrueColor so lipgloss emits ANSI sequences even in non-TTY tests.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI) // restore a safe default
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	entries := []mock.LogEntry{
+		{Timestamp: now, Method: "GET", Path: "/ok", ResponseStatus: 200, Webhook: "ok", LatencyMs: 1.0},
+		{Timestamp: now, Method: "GET", Path: "/redirect", ResponseStatus: 302, Webhook: "redirect", LatencyMs: 1.0},
+		{Timestamp: now, Method: "GET", Path: "/not-found", ResponseStatus: 404, Webhook: "missing", LatencyMs: 1.0},
+		{Timestamp: now, Method: "GET", Path: "/boom", ResponseStatus: 500, Webhook: "crash", LatencyMs: 1.0},
+		{Timestamp: now, Method: "GET", Path: "/info", ResponseStatus: 101, Webhook: "info", LatencyMs: 1.0},
+	}
+
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			RecentLogs: entries,
+			TotalLogs:  uint64(len(entries)),
+		},
+	}
+	m := newModel(src, nil, Config{}, 120, 30)
+	m.last = src.snap
+	m.renderFeed()
+	view := m.View()
+
+	// 2xx → green (76)
+	green200 := "\x1b[38;5;76m200"
+	if !strings.Contains(view, green200) {
+		t.Error("expected 200 wrapped in green (76)")
+	}
+
+	// Path /ok must NOT be wrapped in green — the green sequence must not
+	// appear immediately before /ok.
+	greenOK := "\x1b[38;5;76m/ok"
+	if strings.Contains(view, greenOK) {
+		t.Error("path /ok must not be wrapped in green")
+	}
+
+	// 3xx → cyan (39)
+	if !strings.Contains(view, "\x1b[38;5;39m302") {
+		t.Error("expected 302 wrapped in cyan (39)")
+	}
+
+	// 4xx → yellow (220)
+	if !strings.Contains(view, "\x1b[38;5;220m404") {
+		t.Error("expected 404 wrapped in yellow (220)")
+	}
+
+	// 5xx → red (196)
+	if !strings.Contains(view, "\x1b[38;5;196m500") {
+		t.Error("expected 500 wrapped in red (196)")
+	}
+
+	// 1xx → muted (240 — same as styleMuted)
+	if !strings.Contains(view, "\x1b[38;5;240m101") {
+		t.Error("expected 101 wrapped in muted (240)")
+	}
+
+	// Verify the label "ok" does NOT have the green sequence wrapping it.
+	if strings.Contains(view, green200+"ok") || strings.Contains(view, "\x1b[38;5;76mok") {
+		t.Error("label 'ok' must not be wrapped in green")
+	}
+
+	// Verify the path /boom does NOT have red wrapping it.
+	if strings.Contains(view, "\x1b[38;5;196m/boom") {
+		t.Error("path /boom must not be wrapped in red")
+	}
+
+	// Verify the latency value is NOT wrapped in a status color.
+	if strings.Contains(view, "\x1b[38;5;196m1.0") || strings.Contains(view, "\x1b[38;5;76m1.0") {
+		t.Error("latency value must not be wrapped in status color")
+	}
+}
+
+// ------------------- UXR-002 — per-endpoint stats -------------------
+
+func TestRenderEndpointStats(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			TotalRequests: 42,
+			HitCounts:     map[string]uint64{"ping": 42, "health": 0},
+			EndpointLatency: map[string]mock.LatencyStats{
+				"ping": {Count: 42, Sum: 777, Min: 5.0, Max: 50.0, P95: 18.5},
+				// health intentionally missing — zero-value LatencyStats
+			},
+		},
+	}
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "health", Method: "GET", Path: "/health"},
+		},
+	}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+
+	view := m.View()
+
+	// ping has hits → requests + p95 should appear
+	if !strings.Contains(view, "requests: 42") {
+		t.Error("expected 'requests: 42' for ping")
+	}
+	if !strings.Contains(view, "p95: 18.5ms") {
+		t.Errorf("expected 'p95: 18.5ms' for ping in view:\n%s", view)
+	}
+
+	// health (zero hits) → just "requests: 0", no p95
+	if !strings.Contains(view, "requests: 0") {
+		t.Error("expected 'requests: 0' for health")
+	}
+	// Double-check that health does NOT have a p95 segment.
+	// The "p95:" could appear for ping — check that it appears only once.
+	if strings.Count(view, "p95:") != 1 {
+		t.Errorf("expected exactly 1 p95: occurrence, got %d", strings.Count(view, "p95:"))
+	}
+}
+
+func TestRenderEndpointStatsOrderStable(t *testing.T) {
+	src := &fakeSource{
+		snap: mock.StatsSnapshot{
+			TotalRequests: 0,
+			HitCounts:     map[string]uint64{"beta": 0, "alpha": 0, "gamma": 0},
+			EndpointLatency: map[string]mock.LatencyStats{
+				"beta": {Count: 10, P95: 5.0},
+			},
+		},
+	}
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "beta", Method: "GET", Path: "/b"},
+			{ID: "gamma", Method: "GET", Path: "/g"},
+			{ID: "alpha", Method: "POST", Path: "/a"},
+		},
+	}
+	m := newModel(src, eps, Config{}, 120, 30)
+	m.last = src.snap
+
+	view1 := m.View()
+
+	// second tick with different stats — order must stay the same
+	src.snap.HitCounts["beta"] = 99
+	src.snap.EndpointLatency["beta"] = mock.LatencyStats{Count: 99, P95: 0.5}
+	m2, _ := m.Update(tickMsg(time.Now()))
+	mm := m2.(Model)
+	view2 := mm.View()
+
+	// Extract line order: find the index of each path (they appear in the
+	// feed as well as the header, but the header endpoint lines are our target).
+	// Since paths may appear in multiple places, we look for the endpoint-row
+	// pattern: " → <ID>".
+	for _, v := range []string{view1, view2} {
+		aIdx := strings.Index(v, " → alpha")
+		bIdx := strings.Index(v, " → beta")
+		cIdx := strings.Index(v, " → gamma")
+		if aIdx < 0 || bIdx < 0 || cIdx < 0 {
+			t.Error("could not find all endpoint rows")
+			continue
+		}
+		if !(aIdx < bIdx && bIdx < cIdx) {
+			t.Errorf("expected alpha < beta < gamma (sorted), got a=%d b=%d g=%d", aIdx, bIdx, cIdx)
+		}
+	}
 }

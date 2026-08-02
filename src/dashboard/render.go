@@ -14,6 +14,26 @@ var (
 	styleMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
+// ------------------- UXR-001 helpers -------------------
+
+// tint returns the status code string wrapped in a lipgloss colour by HTTP
+// class: 2xx → green, 3xx → cyan, 4xx → yellow, 5xx → red, other → muted.
+func tint(status int) string {
+	s := fmt.Sprintf("%d", status)
+	switch {
+	case status >= 200 && status < 300:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("76")).Render(s)
+	case status >= 300 && status < 400:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Render(s)
+	case status >= 400 && status < 500:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(s)
+	case status >= 500 && status < 600:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(s)
+	default:
+		return styleMuted.Render(s)
+	}
+}
+
 // View renders the full dashboard.
 func (m Model) View() string {
 	header := m.renderHeader()
@@ -70,7 +90,18 @@ func (m Model) renderHeader() string {
 			if method == "" {
 				method = "ANY "
 			}
-			epParts = append(epParts, fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID))
+			left := fmt.Sprintf("    %-5s %s → %-20s", method, ep.Path, ep.ID)
+
+			// UXR-002 — per-endpoint request count + p95
+			count := m.last.HitCounts[ep.ID]
+			epLat := m.last.EndpointLatency[ep.ID]
+			if epLat.Count > 0 {
+				left += fmt.Sprintf("  requests: %d  p95: %.1fms", count, epLat.P95)
+			} else {
+				left += fmt.Sprintf("  requests: %d", count)
+			}
+
+			epParts = append(epParts, left)
 		}
 		endpoints := styleMuted.Render("Endpoints:") + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
 		parts = append(parts, endpoints)
@@ -147,11 +178,11 @@ func (m Model) buildFeed() string {
 			label = "unmatched"
 		}
 
-		fmt.Fprintf(&sb, "%s  %-5s %s → %d  %s  (%.1fms)\n",
+		fmt.Fprintf(&sb, "%s  %-5s %s → %s  %s  (%.1fms)\n",
 			timeStr,
 			entry.Method,
 			entry.Path,
-			entry.ResponseStatus,
+			tint(entry.ResponseStatus),
 			label,
 			entry.LatencyMs,
 		)

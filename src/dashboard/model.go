@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"sort"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -50,11 +51,16 @@ func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
 	return m
 }
 
-// refreshEndpoints re-reads the endpoint list from the EndpointSource. It is
-// safe with a nil source (dashboard tests and fallbacks).
+// refreshEndpoints re-reads the endpoint list from the EndpointSource and sorts
+// it by ID so the list stays stable across tick refreshes (the registry returns
+// map iteration order, which is non-deterministic). Safe with a nil source.
 func (m *Model) refreshEndpoints() {
 	if m.eps != nil {
-		m.endpoints = m.eps.List()
+		eps := m.eps.List()
+		sort.Slice(eps, func(i, j int) bool {
+			return eps[i].ID < eps[j].ID
+		})
+		m.endpoints = eps
 	} else {
 		m.endpoints = nil
 	}

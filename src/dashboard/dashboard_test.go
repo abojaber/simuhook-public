@@ -738,3 +738,41 @@ func TestModelHeaderNoEndpoints(t *testing.T) {
 		t.Error("expected no Endpoints heading when none registered")
 	}
 }
+
+// TestModelEndpointsSorted verifies the endpoints list is sorted by ID so it
+// does not jump around across tick refreshes (registry returns map order).
+func TestModelEndpointsSorted(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	// Deliberately out of order — the registry map could return them in any order.
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "zeta", Method: "GET", Path: "/z"},
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "alpha", Method: "POST", Path: "/a"},
+		},
+	}
+	m := newModel(src, eps, Config{}, 80, 24)
+
+	want := []string{"alpha", "ping", "zeta"}
+	for i, ep := range m.endpoints {
+		if ep.ID != want[i] {
+			t.Errorf("expected endpoints[%d].ID=%s, got %s", i, want[i], ep.ID)
+		}
+	}
+
+	// Second refresh must yield the same order (stability).
+	m.refreshEndpoints()
+	for i, ep := range m.endpoints {
+		if ep.ID != want[i] {
+			t.Errorf("refresh changed order: expected [%v], got %v", want, ids(m.endpoints))
+		}
+	}
+}
+
+func ids(eps []*mock.Endpoint) []string {
+	out := make([]string, 0, len(eps))
+	for _, e := range eps {
+		out = append(out, e.ID)
+	}
+	return out
+}

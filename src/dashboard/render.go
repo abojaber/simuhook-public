@@ -35,9 +35,16 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Top, parts...)
 }
 
-// renderHeader builds the 2-line header.
+// renderHeader builds the dashboard header: title, server config, live stats,
+// and the list of registered endpoints.
 func (m Model) renderHeader() string {
 	title := styleHeader.Render("Simuhook Dashboard")
+
+	// Config line (from startup banner)
+	adminURL := "http://localhost" + m.cfg.Addr + "/_admin/endpoints"
+	configLine := fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s  Admin: %s",
+		m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir, adminURL)
+	config := styleMuted.Render(configLine)
 
 	// Stats line
 	uptime := m.last.Uptime.Truncate(time.Second).String()
@@ -53,7 +60,23 @@ func (m Model) renderHeader() string {
 	}
 	stats := styleMuted.Render(statsLine)
 
-	return lipgloss.JoinVertical(lipgloss.Left, title, stats)
+	parts := []string{title, config, stats}
+
+	// Endpoints list
+	if len(m.endpoints) > 0 {
+		var epParts []string
+		for _, ep := range m.endpoints {
+			method := ep.Method
+			if method == "" {
+				method = "ANY "
+			}
+			epParts = append(epParts, fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID))
+		}
+		endpoints := styleMuted.Render("Endpoints:") + "\n" + styleMuted.Render(strings.Join(epParts, "\n"))
+		parts = append(parts, endpoints)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top, parts...)
 }
 
 // renderFooter builds the 1-line footer.

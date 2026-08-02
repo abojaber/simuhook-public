@@ -343,7 +343,11 @@ func main() {
 	// non-TUI mode waits for OS signals directly.
 	var exitErr error
 	if tuiEnabled {
-		exitErr = dashboard.Run(stats, termWidth, termHeight)
+		exitErr = dashboard.Run(stats, registry, dashboard.Config{
+			Addr:     *addr,
+			StubsDir: *stubsDir,
+			LogDir:   *logDir,
+		}, termWidth, termHeight)
 	} else {
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, syscall.SIGTERM)

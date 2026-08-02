@@ -43,7 +43,7 @@ func TestModelUpdateTickMsg(t *testing.T) {
 			},
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	newModel, cmd := m.Update(tickMsg(time.Now()))
 
 	// Verify snapshot was read from the returned model
@@ -65,7 +65,7 @@ func TestModelUpdateTickMsg(t *testing.T) {
 }
 
 func TestModelUpdateQuit(t *testing.T) {
-	m := newModel(&fakeSource{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
 
 	// 'q' key should quit
 	_, cmd := m.Update(tea.KeyMsg{
@@ -110,7 +110,7 @@ func TestModelView(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -130,7 +130,7 @@ func TestModelView(t *testing.T) {
 }
 
 func TestInitReturnsCmd(t *testing.T) {
-	m := newModel(&fakeSource{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
 	cmd := m.Init()
 	if cmd == nil {
 		t.Error("expected non-nil cmd from Init")
@@ -149,7 +149,7 @@ func TestModelViewEmpty(t *testing.T) {
 			TotalLogs:  0,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -178,7 +178,7 @@ func TestModelUnmatchedEntry(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -194,7 +194,7 @@ func TestWindowSizeMsg(t *testing.T) {
 			RecentLogs: []mock.LogEntry{},
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	newM, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	updated := newM.(Model)
@@ -207,9 +207,9 @@ func TestWindowSizeMsg(t *testing.T) {
 	if updated.view.Width != 120 {
 		t.Errorf("expected viewport width=120, got %d", updated.view.Width)
 	}
-	// viewport height = 40 - 3 (header 2 + footer 1)
-	if updated.view.Height != 37 {
-		t.Errorf("expected viewport height=37, got %d", updated.view.Height)
+	// viewport height = 40 - headerHeight (title+config+stats = 3) - 1 (footer)
+	if updated.view.Height != 36 {
+		t.Errorf("expected viewport height=36, got %d", updated.view.Height)
 	}
 }
 
@@ -220,7 +220,7 @@ func TestModelUpdateRefreshKey(t *testing.T) {
 			RecentLogs:    []mock.LogEntry{},
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Change the source to a NEW snapshot — this is what happens in production
 	// when new requests come in between refreshes.
@@ -283,7 +283,7 @@ func TestModelPromptEnter(t *testing.T) {
 			TotalLogs: 2,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Press '/' to enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -322,7 +322,7 @@ func TestModelPromptEnter(t *testing.T) {
 
 func TestModelPromptCancel(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -344,7 +344,7 @@ func TestModelPromptCancel(t *testing.T) {
 
 func TestModelPromptQuit(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -377,7 +377,7 @@ func TestModelClearFilter(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	// Pre-populate last snapshot for render
 	m.last = src.Snapshot()
 
@@ -394,7 +394,7 @@ func TestModelClearFilter(t *testing.T) {
 
 func TestModelToggleHelp(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Toggle on
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
@@ -422,7 +422,7 @@ func TestModelFilteredView(t *testing.T) {
 			TotalLogs: 3,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 
 	// No filter — all entries visible
@@ -479,7 +479,7 @@ func TestModelFilterFooter(t *testing.T) {
 			TotalLogs: 2,
 		},
 	}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 
 	// Set a filter and verify footer contains filter info
@@ -507,7 +507,7 @@ func TestModelFilterFooter(t *testing.T) {
 
 func TestModelPromptBackspace(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -548,7 +548,7 @@ func TestModelPromptBackspace(t *testing.T) {
 
 func TestModelPromptView(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -569,7 +569,7 @@ func TestModelPromptView(t *testing.T) {
 
 func TestModelInvalidFilterStatus(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -594,7 +594,7 @@ func TestModelInvalidFilterStatus(t *testing.T) {
 
 func TestModelHelpView(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	m.showHelp = true
 	view := m.View()
@@ -611,7 +611,7 @@ func TestModelHelpView(t *testing.T) {
 
 func TestModelCtrlHBackspace(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -636,7 +636,7 @@ func TestModelCtrlHBackspace(t *testing.T) {
 // A standalone 'q' press (separate KeyMsg) still cancels (TestModelPromptQuit).
 func TestModelPromptBatchedTextWithQ(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -660,7 +660,7 @@ func TestModelPromptBatchedTextWithQ(t *testing.T) {
 // prompt entirely (regression: esc must cancel even after batched text entry).
 func TestModelPromptEscCancelsFromBatched(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, 80, 24)
+	m := newModel(src, nil, Config{}, 80, 24)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m2 := updated.(Model)
@@ -677,5 +677,64 @@ func TestModelPromptEscCancelsFromBatched(t *testing.T) {
 	}
 	if m2.filter != (Filter{}) {
 		t.Error("expected filter unchanged/empty after esc-cancel")
+	}
+}
+
+// fakeEndpoints is a stub EndpointSource for tests.
+type fakeEndpoints struct {
+	eps []*mock.Endpoint
+}
+
+func (f *fakeEndpoints) List() []*mock.Endpoint { return f.eps }
+
+func TestModelHeaderConfig(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+			{ID: "orders", Method: "POST", Path: "/webhooks/order"},
+		},
+	}
+	m := newModel(src, eps, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 80, 24)
+	m.last = src.Snapshot()
+
+	view := m.View()
+	for _, want := range []string{
+		"Simuhook Dashboard",
+		"Address: :8080",
+		"Stubs: ../stubs (2 files)",
+		"Log dir: logs",
+		"http://localhost:8080/_admin/endpoints",
+		"Endpoints:",
+		"/ping → ping",
+		"/webhooks/order → orders",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expected header to contain %q", want)
+		}
+	}
+}
+
+func TestModelHeaderEndpointRefresh(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	eps := &fakeEndpoints{eps: []*mock.Endpoint{{ID: "a", Method: "GET", Path: "/a"}}}
+	m := newModel(src, eps, Config{}, 80, 24)
+
+	// Endpoint added at runtime (admin API) — tick must pick it up.
+	eps.eps = append(eps.eps, &mock.Endpoint{ID: "b", Method: "POST", Path: "/b"})
+	m2, _ := m.Update(tickMsg(time.Now()))
+	mm := m2.(Model)
+	if len(mm.endpoints) != 2 {
+		t.Errorf("expected 2 endpoints after tick, got %d", len(mm.endpoints))
+	}
+}
+
+func TestModelHeaderNoEndpoints(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{Addr: ":8080"}, 80, 24)
+	m.last = src.Snapshot()
+	view := m.View()
+	if strings.Contains(view, "Endpoints:") {
+		t.Error("expected no Endpoints heading when none registered")
 	}
 }

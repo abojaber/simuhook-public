@@ -18,13 +18,16 @@ type tickMsg time.Time
 
 // Model is the bubbletea model for the dashboard.
 type Model struct {
-	source   StatsSource
-	last     mock.StatsSnapshot
-	view     viewport.Model
-	height   int
-	width    int
-	lastErr  error
-	interval time.Duration
+	source    StatsSource
+	eps       EndpointSource
+	cfg       Config
+	last      mock.StatsSnapshot
+	endpoints []*mock.Endpoint
+	view      viewport.Model
+	height    int
+	width     int
+	lastErr   error
+	interval  time.Duration
 
 	// Filtering and prompt state.
 	filter    Filter
@@ -33,14 +36,27 @@ type Model struct {
 	showHelp  bool
 }
 
-func newModel(s StatsSource, w, h int) Model {
-	vp := viewport.New(w, h-3) // header (2) + footer (1)
-	return Model{
+func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
+	m := Model{
 		source:   s,
-		view:     vp,
+		eps:      eps,
+		cfg:      cfg,
 		width:    w,
 		height:   h,
 		interval: time.Second,
+	}
+	m.refreshEndpoints()
+	m.view = viewport.New(w, h-m.headerHeight()-1)
+	return m
+}
+
+// refreshEndpoints re-reads the endpoint list from the EndpointSource. It is
+// safe with a nil source (dashboard tests and fallbacks).
+func (m *Model) refreshEndpoints() {
+	if m.eps != nil {
+		m.endpoints = m.eps.List()
+	} else {
+		m.endpoints = nil
 	}
 }
 
@@ -64,6 +80,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.last = m.source.Snapshot()
+		m.refreshEndpoints()
 		m.syncFeed()
 		return m, refreshCmd(m.interval)
 
@@ -74,7 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.view.Width = msg.Width
-		m.view.Height = msg.Height - 3 // header (2) + footer (1)
+		m.view.Height = msg.Height - m.headerHeight() - 1 // header + footer
 		m.syncFeed()
 		return m, nil
 	}
@@ -183,4 +200,15 @@ func (m *Model) syncFeed() {
 // renderFeed builds the feed content from recent logs and sets it on the viewport.
 func (m *Model) renderFeed() {
 	m.view.SetContent(m.buildFeed())
+}
+
+// headerHeight returns the number of rows the header occupies: the title,
+// the config lines (address/stubs/log-dir/admin), the stats line, and the
+// endpoints list (if any endpoints are registered).
+func (m Model) headerHeight() int {
+	h := 3 // title + config + stats
+	if len(m.endpoints) > 0 {
+		h += 1 + len(m.endpoints) // "Endpoints:" heading + one row each
+	}
+	return h
 }

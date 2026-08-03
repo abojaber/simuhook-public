@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -157,71 +156,10 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Admin endpoints (not logged)
-	mux.HandleFunc("/_admin/endpoints", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(registry.List())
-
-		case http.MethodPost:
-			var ep mock.Endpoint
-			if err := json.NewDecoder(r.Body).Decode(&ep); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			if err := registry.Add(&ep); err != nil {
-				http.Error(w, err.Error(), http.StatusConflict)
-				return
-			}
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(ep)
-
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	mux.HandleFunc("/_admin/endpoints/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/_admin/endpoints/")
-		if id == "" {
-			http.Error(w, "missing endpoint id", http.StatusBadRequest)
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			ep, err := registry.Get(id)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ep)
-
-		case http.MethodPut:
-			var ep mock.Endpoint
-			if err := json.NewDecoder(r.Body).Decode(&ep); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			if err := registry.Update(id, &ep); err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ep)
-
-		case http.MethodDelete:
-			if err := registry.Remove(id); err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	// Admin endpoints (control plane — not matched against stubs, not logged).
+	admin := mock.NewAdminHandler(registry)
+	mux.Handle(mock.AdminEndpointsPath, admin)      // collection
+	mux.Handle(mock.AdminEndpointsPath+"/", admin)  // item: /{id}
 
 	// Webhook handler — matched & unmatched requests are logged
 	observers := []func(mock.LogEntry){

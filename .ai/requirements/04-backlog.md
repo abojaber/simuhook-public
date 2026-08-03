@@ -198,7 +198,7 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
 
 ## WS-017b — Extract admin API into `mock.NewAdminHandler` (deferred from WS-017)
 
-**Status:** `draft` | **Priority:** `[Could]`
+**Status:** `done` | **Priority:** `[Could]` | **Implemented:** `505e12c` | **QA:** verified 2026-08-03 (16/16 ACs)
 
 **Story:**
 > As a developer, I want the admin REST API handler extracted into a testable `mock.NewAdminHandler(registry) http.Handler` so that the control-plane routes are covered by unit tests rather than only by manual curl smoke tests.

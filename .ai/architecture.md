@@ -28,6 +28,7 @@ src/
 └── mock/
     ├── types.go          # Endpoint, Response structs
     ├── registry.go       # Store, match, CRUD endpoints (thread-safe)
+    ├── admin.go          # NewAdminHandler: REST admin API (/_admin/endpoints) (WS-017b)
     ├── handler.go        # Handler: single request-handling source of truth (WS-017)
     ├── stub.go           # YAML stub file parser
     ├── logger.go         # LogEntry, JSON Lines logging
@@ -93,6 +94,17 @@ All other paths are the mock surface: requests are matched against stubs and ans
 - **TUI log-dir fix:** `os.MkdirAll(*logDir)` before opening `server.log` in TUI mode (pre-existing WS-010b bug — `NewLogger` creates the dir lazily, so a fresh `--log-dir` crashed TUI startup).
 - **Coverage:** mock 74.4% → 81.4% (dead code removed, shipped path now covered for the first time); `go vet` clean (4 pre-existing findings lived in the deleted self-testing tests).
 
+### WS-017b — Single admin handler (`[Could]`, done)
+- **Problem:** the admin REST API lived inline in `main.go:161-224` with zero unit tests — the same gap WS-017 closed for the request path.
+- **Decision:** extract to `mock.NewAdminHandler(registry *Registry) http.Handler` in `src/mock/admin.go`; `main.go` keeps only the two mounts (`mux.Handle(AdminEndpointsPath, admin)` + `mux.Handle(AdminEndpointsPath+"/", admin)`). Concrete type `adminHandler` unexported; **no config struct** (admin has no observers, no clock — contrast WS-017's `HandlerConfig`). Nil registry panics in the constructor (WS-017 convention). Exported `AdminEndpointsPath = "/_admin/endpoints"` removes the literal duplication between the mux mounts and the id-parsing `TrimPrefix`.
+- **One handler, two mounts:** the handler distinguishes collection from item with `r.URL.Path == AdminEndpointsPath`. Rejected an internal `ServeMux` (double routing, inherits mux path-cleaning/redirect semantics, prefix-bound 404s) and split constructors (double API surface) — there are exactly two routes.
+- **Admin stays unlogged** by mux precedence: both admin patterns beat `"/"`, so admin traffic never reaches `mock.NewHandler` ⇒ no `logger.Log`, no `stats.RecordRequest`, no TUI row. Locked by `TestAdminHandler_MuxPrecedence_AdminNotLogged`, which composes the same mux inside package `mock`.
+- **Locked wire semantics (byte-for-byte from the shipped main.go):** success paths set `Content-Type: application/json` **except POST 201, which sets none** (sniffed to `text/plain; charset=utf-8` on the wire — preserved quirk, approved by stakeholder 2026-08-03, Q1); `json.Encoder` supplies the trailing `"\n"`; every error goes through `http.Error` ⇒ `text/plain; charset=utf-8` + `X-Content-Type-Options: nosniff` + `msg + "\n"` (**405 included**); `DELETE` → 204 empty body, no `Content-Type`; empty `List()` encodes `[]\n` (never `null`).
+- **Order-of-checks invariants are observable and must not be tidied:** empty-id 400 precedes the item method switch (`PATCH /_admin/endpoints/` ⇒ **400**, not 405); JSON decode precedes `Add`/`Update` (invalid JSON ⇒ **400** even for a duplicate or unknown id).
+- **`registry.Update` sets `ep.ID = id`,** so a `PUT` response reports the **path** id and no second map key is created; `PUT` is a full replace (absent fields become zero; `rrIndex` resets). Load-bearing coupling — documented in `admin.go`.
+- **Race fix (byte-identical):** POST/PUT now `Encode(&ep)` instead of `Encode(ep)`. The value copy read the unexported `rrIndex` non-atomically while `PickResponse` atomically incremented it through the registry's pointer — reproducible `-race` warning. Pointer-encode produces identical JSON and matches GET-list/GET-one.
+- **Known quirks preserved (not fixed):** `created_at` is client-supplied/zero on POST (only the YAML loader stamps `time.Now()`); `List()` order is map-iteration order; `[]byte` fields (`payload`, `response.body`) are base64 on the wire; no `Allow` header on 405; the admin API is unauthenticated (standing risk — `ep.Path`/`ep.ID` sanitized in the TUI because of it).
+
 ### Stubs and matching
 - YAML stubs support: method, path, query match, header match, payload match, response status/body/headers, `delay`, `echo`, `template` modes, and multiple response variants with weights (round-robin on equal weight).
 - Hot reload via fsnotify; every reload is logged.
@@ -112,6 +124,5 @@ All other paths are the mock surface: requests are matched against stubs and ans
 
 ## Open Items
 
-- **WS-017b** (`[Could]`, backlog): extract the admin REST API (`/_admin/endpoints`) from main.go into `mock.NewAdminHandler(registry) http.Handler` with unit tests (deferred from WS-017 by stakeholder).
 - **WS-011** (`[Could]`, backlog): webhook forwarding / proxy mode.
 - **WS-012** (`[Could]`, backlog): WebSocket / SSE endpoint simulation.

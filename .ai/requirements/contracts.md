@@ -63,11 +63,13 @@ responses:               # optional: multiple response variants
   "response_headers": {
     "Content-Type": "application/json"
   },
-  "response_body": "{\"status\":\"ok\"}"
+  "response_body": "{\"status\":\"ok\"}",
+  "response_variant": 0
 }
 ```
 > **WS-018 / UXR-013:** `response_headers` is always an object (never null); only headers Simuhock explicitly set via `w.Header().Set()` are captured (not Content-Length, Date, or sniffed Content-Type). `response_body` is the exact bytes sent, uncapped by default; for echo endpoints the request body appears here too (carried as the response). Both fields are additive — existing log consumers can ignore unknown keys.
 > **`--max-log-body` / `LOG_MAX_BODY` (backlog: max-log-body-cap):** when set (> 0), `body` and `response_body` are truncated to at most N bytes at capture time, walking back to the nearest UTF-8 rune boundary (a split multi-byte rune is dropped rather than emitting invalid bytes). This is **capture-time-only** — it never affects the bytes written to the actual HTTP response, nor echo/template rendering, which always use the full, uncapped body. Default `0` = unlimited (current behavior, unchanged unless opted in).
+> **`response_variant` (backlog: response-variant-index):** present only for endpoints configured with a weighted/round-robin `responses:` list — the 0-based index of the variant `PickResponse` selected for this request. **Omitted entirely** (not `null`) when the endpoint used its singular `response:` (no variants configured) — a pointer field distinguishes "not applicable" from "variant index 0". Additive; existing log consumers can ignore it.
 
 ---
 

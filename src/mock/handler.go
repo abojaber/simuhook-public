@@ -74,9 +74,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ep := h.registry.Match(r.Method, r.URL.Path, headers, query, body)
 
 	var (
-		responseStatus int
-		webhookName    string
-		responseBody   []byte
+		responseStatus  int
+		webhookName     string
+		responseBody    []byte
+		responseVariant *int
 	)
 
 	if ep == nil {
@@ -90,8 +91,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Pick response variant (singular or from responses array).
 		// PickResponse returns a pointer into the ep's responses slice —
-		// never mutate through it.
-		resp := PickResponse(ep)
+		// never mutate through it. variantIdx is -1 for the singular
+		// ep.Response (no variants configured); see LogEntry.ResponseVariant.
+		resp, variantIdx := PickResponse(ep)
+		if variantIdx >= 0 {
+			responseVariant = &variantIdx
+		}
 
 		// Build template data BEFORE the delay sleep so that
 		// {{.Now}} == request-receipt time.
@@ -161,6 +166,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Matched:         ep != nil,
 		ResponseHeaders: respHeaders,
 		ResponseBody:    truncateRuneSafe(string(responseBody), h.maxBodyBytes),
+		ResponseVariant: responseVariant,
 	}
 
 	for _, o := range h.observers {

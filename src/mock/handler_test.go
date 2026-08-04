@@ -1,6 +1,8 @@
 package mock
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1162,5 +1164,78 @@ func TestTruncateRuneSafe(t *testing.T) {
 				t.Errorf("truncateRuneSafe(%q, %d) = %q is not valid UTF-8", c.s, c.max, got)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// LogEntry.ResponseVariant (backlog: response-variant-index)
+// ---------------------------------------------------------------------------
+
+func TestHandler_ResponseVariant_NilForSingular(t *testing.T) {
+	ep := &Endpoint{
+		ID:       "singular",
+		Method:   "GET",
+		Path:     "/singular",
+		Response: Response{StatusCode: 200, Body: []byte(`ok`)},
+	}
+	obs, ch := recordingObserver()
+	h, _ := testHandler(t, ep, obs)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/singular", nil))
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseVariant != nil {
+			t.Fatalf("expected ResponseVariant nil for a singular response, got %v", *entry.ResponseVariant)
+		}
+		data, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if strings.Contains(string(data), "response_variant") {
+			t.Errorf("expected response_variant key omitted from JSON when nil, got: %s", data)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_ResponseVariant_RoundRobinIndices(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "multi",
+		Method: "GET",
+		Path:   "/multi",
+		Responses: []Response{
+			{StatusCode: 200, Body: []byte(`first`)},
+			{StatusCode: 201, Body: []byte(`second`)},
+		},
+	}
+	obs, ch := recordingObserver()
+	h, _ := testHandler(t, ep, obs)
+
+	wantIdx := []int{0, 1, 0}
+	for i, want := range wantIdx {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/multi", nil))
+
+		select {
+		case entry := <-ch:
+			if entry.ResponseVariant == nil {
+				t.Fatalf("step %d: expected non-nil ResponseVariant", i)
+			}
+			if *entry.ResponseVariant != want {
+				t.Fatalf("step %d: expected ResponseVariant=%d, got %d", i, want, *entry.ResponseVariant)
+			}
+			data, err := json.Marshal(entry)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if !strings.Contains(string(data), fmt.Sprintf(`"response_variant":%d`, want)) {
+				t.Errorf("step %d: expected response_variant=%d present in JSON, got: %s", i, want, data)
+			}
+		default:
+			t.Fatalf("step %d: expected an observer call", i)
+		}
 	}
 }

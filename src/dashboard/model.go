@@ -462,6 +462,21 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.endpointsView.ScrollDown(1)
 		}
 		return m, nil
+
+	// backlog: viewport-g-g-bindings — jump to top/bottom of the stream
+	// feed. bubbles v1.0.0's viewport.DefaultKeyMap does not bind g/G (only
+	// PageDown/PageUp/HalfPageUp/HalfPageDown/Up/Down/Left/Right), so these
+	// are handled explicitly here rather than falling through to
+	// m.view.Update. Pure navigation — does NOT collapse an active row
+	// expansion, consistent with pgup/pgdn/arrow-key scrolling.
+	case s == "g" && !m.prompting:
+		m.view.GotoTop()
+		m.liveFollow = false
+		return m, nil
+	case s == "G" && !m.prompting:
+		m.view.GotoBottom()
+		m.liveFollow = true
+		return m, nil
 	}
 
 	// Prompt input mode: swallow all keys.

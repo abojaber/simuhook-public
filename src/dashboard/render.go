@@ -572,6 +572,7 @@ func (m Model) renderHelp() string {
 		styleMuted.Render("│  L       pause/resume live    e       collapse endpoints    │"),
 		styleMuted.Render("│  enter   expand/collapse row  i       inspect req/resp      │"),
 		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
+		styleMuted.Render("│  g/G     jump to top / bottom of feed                       │"),
 		styleMuted.Render("│  shift+↑/↓ K/J scroll endpoints esc   cancel / clear filter │"),
 		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
 	}
@@ -879,6 +880,12 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 
 	// Response headers block.
 	var respPlain []string
+	// Variant index (backlog: response-variant-index) — only shown when the
+	// endpoint used a weighted/round-robin Responses slice; nil (singular
+	// Response, no variants configured) renders nothing here.
+	if e.ResponseVariant != nil {
+		respPlain = append(respPlain, fmt.Sprintf("%-12s %d", "variant:", *e.ResponseVariant))
+	}
 	if len(e.ResponseHeaders) == 0 {
 		respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
 	} else {

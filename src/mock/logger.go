@@ -23,6 +23,13 @@ type LogEntry struct {
 	Matched         bool              `json:"matched"`
 	ResponseHeaders map[string]string `json:"response_headers"`
 	ResponseBody    string            `json:"response_body"`
+
+	// ResponseVariant is the 0-based index into the endpoint's Responses
+	// slice that PickResponse selected, or nil when the endpoint used its
+	// singular Response (no weighted/round-robin variants configured). A
+	// pointer distinguishes "not applicable" (nil, omitted from JSON) from
+	// "variant index 0" (present, serializes as 0).
+	ResponseVariant *int `json:"response_variant,omitempty"`
 }
 
 // Logger writes JSON log entries to per-webhook files under a log directory.

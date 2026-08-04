@@ -136,9 +136,12 @@ func matchPayload(want, got []byte) bool {
 // If the endpoint has multiple responses, it uses weighted random selection
 // (if weights are present) or round-robin (if no weights).
 // Falls back to the singular Response if no variants are configured.
-func PickResponse(ep *Endpoint) *Response {
+// The second return value is the 0-based index into ep.Responses that was
+// selected, or -1 when the singular ep.Response was used (no variants
+// configured) — see LogEntry.ResponseVariant.
+func PickResponse(ep *Endpoint) (*Response, int) {
 	if len(ep.Responses) == 0 {
-		return &ep.Response
+		return &ep.Response, -1
 	}
 
 	if hasWeights(ep.Responses) {
@@ -147,7 +150,8 @@ func PickResponse(ep *Endpoint) *Response {
 
 	// Round-robin
 	idx := atomic.AddUint64(&ep.rrIndex, 1) - 1
-	return &ep.Responses[idx%uint64(len(ep.Responses))]
+	i := int(idx % uint64(len(ep.Responses)))
+	return &ep.Responses[i], i
 }
 
 func hasWeights(responses []Response) bool {
@@ -159,20 +163,22 @@ func hasWeights(responses []Response) bool {
 	return false
 }
 
-func pickWeighted(responses []Response) *Response {
+func pickWeighted(responses []Response) (*Response, int) {
 	total := 0
 	for _, r := range responses {
 		total += r.Weight
 	}
 	if total <= 0 {
-		return &responses[rand.Intn(len(responses))]
+		i := rand.Intn(len(responses))
+		return &responses[i], i
 	}
 	n := rand.Intn(total)
 	for i, r := range responses {
 		n -= r.Weight
 		if n < 0 {
-			return &responses[i]
+			return &responses[i], i
 		}
 	}
-	return &responses[len(responses)-1]
+	i := len(responses) - 1
+	return &responses[i], i
 }

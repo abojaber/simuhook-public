@@ -4635,6 +4635,28 @@ func TestInspectLines_AllFields(t *testing.T) {
 	}
 }
 
+func TestInspectLines_ResponseVariant(t *testing.T) {
+	e := makeEntryForInspect()
+	variant := 2
+	e.ResponseVariant = &variant
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "variant:") || !strings.Contains(joined, "2") {
+		t.Errorf("expected 'variant: 2' in inspect output, got:\n%s", joined)
+	}
+}
+
+func TestInspectLines_ResponseVariant_NilOmitsLine(t *testing.T) {
+	e := makeEntryForInspect() // ResponseVariant is nil (zero value)
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "variant:") {
+		t.Errorf("expected no 'variant:' line when ResponseVariant is nil, got:\n%s", joined)
+	}
+}
+
 func TestInspectLines_ResponseStatusTint(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(termenv.ANSI)
@@ -5451,5 +5473,117 @@ func TestModelHelpContainsInspectBinding(t *testing.T) {
 		if lipgloss.Width(l) != 63 {
 			t.Errorf("help line %d width=%d, want 63: %q", i, lipgloss.Width(l), l)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// g/G viewport bindings (backlog: viewport-g-g-bindings)
+// ---------------------------------------------------------------------------
+
+func TestModelHelpContainsGotoBindings(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.showHelp = true
+
+	view := m.View()
+	if !strings.Contains(view, "g/G") {
+		t.Error("expected 'g/G' in help")
+	}
+
+	lines := strings.Split(m.renderHelp(), "\n")
+	for i, l := range lines {
+		if lipgloss.Width(l) != 63 {
+			t.Errorf("help line %d width=%d, want 63: %q", i, lipgloss.Width(l), l)
+		}
+	}
+}
+
+func TestModelGotoTop_G_lowercase(t *testing.T) {
+	entries := entriesWithIDs(60) // enough to make the feed scrollable
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	m.view.GotoBottom()
+	if !m.view.AtBottom() {
+		t.Fatal("expected at bottom before test")
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m2 := updated.(Model)
+
+	if m2.view.YOffset != 0 {
+		t.Errorf("expected YOffset=0 after 'g', got %d", m2.view.YOffset)
+	}
+	if m2.liveFollow {
+		t.Error("expected liveFollow=false after 'g' (leaving the live edge)")
+	}
+}
+
+func TestModelGotoBottom_G_uppercase(t *testing.T) {
+	entries := entriesWithIDs(60)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	m.view.SetYOffset(0) // start away from the bottom
+	m.liveFollow = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m2 := updated.(Model)
+
+	if !m2.view.AtBottom() {
+		t.Error("expected viewport at bottom after 'G'")
+	}
+	if !m2.liveFollow {
+		t.Error("expected liveFollow=true after 'G' (returning to the live edge)")
+	}
+}
+
+func TestModelGotoTopBottom_PreservesExpansion(t *testing.T) {
+	entries := entriesWithIDs(60)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	m.view.GotoBottom()
+
+	// Expand the top visible row.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := updated.(Model)
+	if m2.expandedID == "" {
+		t.Fatal("expected a row to be expanded before testing g/G")
+	}
+	expandedBefore := m2.expandedID
+
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m3 := updated.(Model)
+	if m3.expandedID != expandedBefore {
+		t.Errorf("expected 'g' to preserve the expanded row, got expandedID=%q", m3.expandedID)
+	}
+
+	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m4 := updated.(Model)
+	if m4.expandedID != expandedBefore {
+		t.Errorf("expected 'G' to preserve the expanded row, got expandedID=%q", m4.expandedID)
+	}
+}
+
+func TestModelGotoTopBottom_NoCollisionWithPrompt(t *testing.T) {
+	// 'g'/'G' must be swallowed by the filter prompt (typed as filter text),
+	// not interpreted as navigation, while prompting.
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m2 := updated.(Model)
+	if !m2.prompting {
+		t.Fatal("expected prompting=true after '/'")
+	}
+
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m3 := updated.(Model)
+	if m3.prompt != "g" {
+		t.Errorf("expected 'g' typed into the prompt, got %q", m3.prompt)
 	}
 }

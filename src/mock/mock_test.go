@@ -252,9 +252,12 @@ func TestPickResponse_FallsBackToSingular(t *testing.T) {
 		Response: Response{StatusCode: 200, Body: []byte(`singular`)},
 	}
 	for i := 0; i < 10; i++ {
-		r := PickResponse(ep)
+		r, idx := PickResponse(ep)
 		if r.StatusCode != 200 || string(r.Body) != "singular" {
 			t.Fatalf("expected singular response")
+		}
+		if idx != -1 {
+			t.Fatalf("expected variant index -1 for singular response, got %d", idx)
 		}
 	}
 }
@@ -269,10 +272,14 @@ func TestPickResponse_RoundRobin(t *testing.T) {
 	}
 
 	expected := []int{200, 201, 202, 200, 201, 202}
+	expectedIdx := []int{0, 1, 2, 0, 1, 2}
 	for i, want := range expected {
-		r := PickResponse(ep)
+		r, idx := PickResponse(ep)
 		if r.StatusCode != want {
 			t.Fatalf("round-robin step %d: expected %d, got %d", i, want, r.StatusCode)
+		}
+		if idx != expectedIdx[i] {
+			t.Fatalf("round-robin step %d: expected variant index %d, got %d", i, expectedIdx[i], idx)
 		}
 	}
 }
@@ -287,8 +294,11 @@ func TestPickResponse_WeightedRandom(t *testing.T) {
 
 	counts := map[int]int{}
 	for i := 0; i < 1000; i++ {
-		r := PickResponse(ep)
+		r, idx := PickResponse(ep)
 		counts[r.StatusCode]++
+		if idx < 0 || idx > 1 {
+			t.Fatalf("expected variant index 0 or 1, got %d", idx)
+		}
 	}
 
 	if counts[200] < 800 {
@@ -309,7 +319,7 @@ func TestPickResponse_EqualWeight(t *testing.T) {
 
 	counts := map[int]int{}
 	for i := 0; i < 1000; i++ {
-		r := PickResponse(ep)
+		r, _ := PickResponse(ep)
 		counts[r.StatusCode]++
 	}
 
@@ -327,15 +337,21 @@ func TestPickResponse_NoWeightsUsesRoundRobin(t *testing.T) {
 	}
 
 	bodies := make([]string, 4)
+	indices := make([]int, 4)
 	for i := 0; i < 4; i++ {
-		r := PickResponse(ep)
+		r, idx := PickResponse(ep)
 		bodies[i] = string(r.Body)
+		indices[i] = idx
 	}
 
 	expected := []string{"a", "b", "a", "b"}
+	expectedIdx := []int{0, 1, 0, 1}
 	for i, b := range bodies {
 		if b != expected[i] {
 			t.Fatalf("expected %q at step %d, got %q", expected[i], i, b)
+		}
+		if indices[i] != expectedIdx[i] {
+			t.Fatalf("expected variant index %d at step %d, got %d", expectedIdx[i], i, indices[i])
 		}
 	}
 }

@@ -38,7 +38,11 @@ const (
 	maxInspectBodyBytes = 4096
 	maxInspectBodyLines = 40
 	maxInspectJSONBytes = 262576
-	maxInspectHeaders   = 30
+	// maxRenderedHeaders caps header/query line counts in both detailLines
+	// (UXR-008) and inspectLines (UXR-013) — attacker-controlled maps (a
+	// client can send hundreds of headers) must not inflate the feed block
+	// or feedLineToEntry without bound.
+	maxRenderedHeaders = 30
 )
 
 // ------------------- UXR-001 helpers -------------------
@@ -624,7 +628,9 @@ func (m Model) summaryLine(e mock.LogEntry, sel bool) string {
 
 // detailLines returns the expanded-detail lines for a log entry. The gutter is
 // "  │ " and keys are sorted for determinism. Every line is truncated to
-// m.view.Width and rendered in the muted style.
+// m.view.Width and rendered in the muted style. Request headers and query
+// params are each capped at maxRenderedHeaders with a "(N more ...)" marker
+// (attacker-controlled maps must not inflate this block unbounded).
 func (m Model) detailLines(e mock.LogEntry) []string {
 	var plain []string
 
@@ -637,7 +643,9 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 	plain = append(plain, fmt.Sprintf("%-12s %s", "matched:", matched))
 	plain = append(plain, fmt.Sprintf("%-12s %s", "timestamp:", e.Timestamp))
 
-	// Headers block.
+	// Headers block. Capped at maxRenderedHeaders — request headers are
+	// attacker-controlled (a client can send hundreds) and must not inflate
+	// this block or feedLineToEntry without bound.
 	if len(e.Headers) == 0 {
 		plain = append(plain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
 	} else {
@@ -647,12 +655,19 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		count := 0
 		for _, k := range keys {
+			if count >= maxRenderedHeaders {
+				plain = append(plain, fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders))
+				break
+			}
 			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])))
+			count++
 		}
 	}
 
-	// Query block.
+	// Query block. Same cap/rationale as headers — query params are equally
+	// attacker-controlled.
 	if len(e.Query) == 0 {
 		plain = append(plain, fmt.Sprintf("%-12s %s", "query:", "(none)"))
 	} else {
@@ -662,8 +677,14 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		count := 0
 		for _, k := range keys {
+			if count >= maxRenderedHeaders {
+				plain = append(plain, fmt.Sprintf("  (%d more query)", len(keys)-maxRenderedHeaders))
+				break
+			}
 			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])))
+			count++
 		}
 	}
 
@@ -810,8 +831,8 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 		sort.Strings(keys)
 		count := 0
 		for _, k := range keys {
-			if count >= maxInspectHeaders {
-				plain = append(plain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxInspectHeaders)))
+			if count >= maxRenderedHeaders {
+				plain = append(plain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders)))
 				break
 			}
 			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])))
@@ -869,8 +890,8 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 		sort.Strings(keys)
 		count := 0
 		for _, k := range keys {
-			if count >= maxInspectHeaders {
-				respPlain = append(respPlain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxInspectHeaders)))
+			if count >= maxRenderedHeaders {
+				respPlain = append(respPlain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders)))
 				break
 			}
 			respPlain = append(respPlain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.ResponseHeaders[k])))

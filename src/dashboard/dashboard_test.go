@@ -4738,7 +4738,7 @@ func TestInspectLines_SortedKeys(t *testing.T) {
 func TestInspectLines_HeaderCap(t *testing.T) {
 	e := makeEntryForInspect()
 	e.ResponseHeaders = make(map[string]string)
-	for i := 0; i < maxInspectHeaders+5; i++ {
+	for i := 0; i < maxRenderedHeaders+5; i++ {
 		e.ResponseHeaders[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
 	}
 	m := makeModelForInspect(120)
@@ -4751,6 +4751,120 @@ func TestInspectLines_HeaderCap(t *testing.T) {
 	// sorting, X-H00..X-H29 are the first 30; X-H30+ are beyond the cap.
 	if strings.Contains(joined, "X-H30") {
 		t.Error("should not render headers beyond cap")
+	}
+}
+
+func TestDetailLines_HeaderCap(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID: "req-cap",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Headers:   map[string]string{},
+	}
+	for i := 0; i < maxRenderedHeaders+5; i++ {
+		e.Headers[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.expandedID = "req-cap"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "more headers") {
+		t.Errorf("expected 'more headers' marker when headers exceed cap, got:\n%s", joined)
+	}
+	// Zero-padded sorting: X-H00..X-H29 are the first 30; X-H30+ are beyond
+	// the cap and must not be rendered.
+	if strings.Contains(joined, "X-H30") {
+		t.Error("should not render headers beyond cap")
+	}
+	if !strings.Contains(joined, "X-H29") {
+		t.Error("expected the 30th header (X-H29) to be rendered")
+	}
+}
+
+func TestDetailLines_HeaderCap_ByteIdenticalBelowCap(t *testing.T) {
+	// Exactly at the cap: no marker, all headers rendered.
+	e := mock.LogEntry{
+		RequestID: "req-atcap",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Headers:   map[string]string{},
+	}
+	for i := 0; i < maxRenderedHeaders; i++ {
+		e.Headers[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.expandedID = "req-atcap"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "more headers") {
+		t.Error("expected no cap marker when header count equals the cap")
+	}
+	if !strings.Contains(joined, "X-H29") {
+		t.Error("expected all 30 headers to be rendered")
+	}
+}
+
+func TestDetailLines_QueryCap(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID: "req-qcap",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Query:     map[string]string{},
+	}
+	for i := 0; i < maxRenderedHeaders+5; i++ {
+		e.Query[fmt.Sprintf("q%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.expandedID = "req-qcap"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "more query") {
+		t.Errorf("expected 'more query' marker when query exceeds cap, got:\n%s", joined)
+	}
+	// Zero-padded sorting: q00..q29 are the first 30; q30+ are beyond the cap.
+	if strings.Contains(joined, "q30:") {
+		t.Error("should not render query params beyond cap")
+	}
+	if !strings.Contains(joined, "q29:") {
+		t.Error("expected the 30th query param (q29) to be rendered")
+	}
+}
+
+func TestDetailLines_QueryCap_ByteIdenticalBelowCap(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID: "req-qatcap",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Query:     map[string]string{},
+	}
+	for i := 0; i < maxRenderedHeaders; i++ {
+		e.Query[fmt.Sprintf("q%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.expandedID = "req-qatcap"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "more query") {
+		t.Error("expected no cap marker when query count equals the cap")
+	}
+	if !strings.Contains(joined, "q29:") {
+		t.Error("expected all 30 query params to be rendered")
 	}
 }
 

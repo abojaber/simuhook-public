@@ -168,3 +168,31 @@ func TestLogger_AllRequiredFields(t *testing.T) {
 		t.Fatalf("matched mismatch")
 	}
 }
+
+func TestLogger_NilResponseHeadersMarshalsAsEmptyObject(t *testing.T) {
+	dir := t.TempDir()
+	logger := NewLogger(dir)
+
+	entry := LogEntry{
+		RequestID:      "nil-headers-test",
+		Webhook:        "nil-headers",
+		Method:         "POST",
+		ResponseStatus: 200,
+		// ResponseHeaders is intentionally zero-value / nil.
+	}
+
+	if err := logger.Log(entry); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	logger.Close()
+
+	data, _ := os.ReadFile(filepath.Join(dir, "nil-headers.log"))
+	line := string(data)
+
+	if strings.Contains(line, `"response_headers":null`) {
+		t.Error("response_headers must not marshal as null, got null")
+	}
+	if !strings.Contains(line, `"response_headers":{}`) {
+		t.Errorf("response_headers must marshal as empty object {}, got: %s", line)
+	}
+}

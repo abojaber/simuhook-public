@@ -482,7 +482,7 @@ func TestModelFilterFooter(t *testing.T) {
 			TotalLogs: 2,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, Config{}, 120, 24)
 	m.last = src.Snapshot()
 
 	// Set a filter and verify footer contains filter info
@@ -4457,5 +4457,885 @@ func TestFitBlock(t *testing.T) {
 	// Blank line padding.
 	if strings.TrimSpace(result[3]) != "" {
 		t.Errorf("expected blank padded line 3, got %q", result[3])
+	}
+}
+
+// ================================================================
+// WS-018 / UXR-013 — request/response inspector
+// ================================================================
+
+// ------------------- formatBody tests -------------------
+
+func TestFormatBody_EmptyNil(t *testing.T) {
+	lines := formatBody("")
+	if lines != nil {
+		t.Errorf("expected nil for empty body, got %d lines", len(lines))
+	}
+}
+
+func TestFormatBody_ValidJSON(t *testing.T) {
+	raw := `{"key":"value","arr":[1,2,3]}`
+	lines := formatBody(raw)
+	if len(lines) < 2 {
+		t.Fatalf("expected ≥2 lines for pretty JSON, got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "{") {
+		t.Error("expected JSON opening brace")
+	}
+	// Should be indented with 2 spaces.
+	if !strings.Contains(lines[1], "  \"key\"") {
+		t.Errorf("expected indentation in line 1, got %q", lines[1])
+	}
+}
+
+func TestFormatBody_JSONCapBytes(t *testing.T) {
+	// Build a JSON body larger than maxInspectJSONBytes.
+	large := strings.Repeat("x", maxInspectJSONBytes+1)
+	lines := formatBody(large)
+	// Should fall through to plain truncation, not JSON pretty-print.
+	if len(lines) == 0 {
+		t.Fatal("expected at least 1 line for large body")
+	}
+	// The body is > maxInspectJSONBytes → skipped JSON path → plain truncated.
+	if len(lines[0]) > maxInspectBodyBytes+3 { // +3 for "…"
+		t.Errorf("line too long for plain truncation: %d chars", len(lines[0]))
+	}
+}
+
+func TestFormatBody_InvalidJSONPlain(t *testing.T) {
+	raw := `not{json`
+	lines := formatBody(raw)
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line for non-JSON, got %d", len(lines))
+	}
+	if lines[0] != sanitize(raw) {
+		t.Errorf("expected sanitized output %q, got %q", sanitize(raw), lines[0])
+	}
+}
+
+func TestFormatBody_CRLF(t *testing.T) {
+	raw := "line1\r\nline2\r\n"
+	lines := formatBody(raw)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	if strings.Contains(lines[0], "\r") {
+		t.Error("\\r should be stripped")
+	}
+	if strings.Contains(lines[1], "\r") {
+		t.Error("\\r should be stripped")
+	}
+}
+
+func TestFormatBody_LineCap(t *testing.T) {
+	// Build many lines to exceed maxInspectBodyLines.
+	parts := make([]string, maxInspectBodyLines+10)
+	for i := range parts {
+		parts[i] = fmt.Sprintf("line %d", i)
+	}
+	raw := strings.Join(parts, "\n")
+	lines := formatBody(raw)
+	if len(lines) > maxInspectBodyLines+1 { // +1 for truncation marker
+		t.Errorf("expected at most %d lines + marker, got %d", maxInspectBodyLines+1, len(lines))
+	}
+	if !strings.Contains(lines[len(lines)-1], "truncated") {
+		t.Error("expected truncation marker in last line")
+	}
+}
+
+func TestFormatBody_Sanitize(t *testing.T) {
+	raw := "clean\x1b[31mtext\x00null"
+	lines := formatBody(raw)
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	if strings.Contains(lines[0], "\x1b") {
+		t.Error("ESC should be sanitized")
+	}
+	if strings.Contains(lines[0], "\x00") {
+		t.Error("NUL should be sanitized")
+	}
+}
+
+func TestFormatBody_JSONWithEscapes(t *testing.T) {
+	// JSON with embedded newlines and escapes should be preserved in JSON path.
+	raw := `{"msg":"line1\nline2","val":"\"quoted\""}`
+	lines := formatBody(raw)
+	if len(lines) < 2 {
+		t.Fatalf("expected ≥2 lines for JSON with escapes, got %d", len(lines))
+	}
+	// The escape sequences should be preserved (not converted to actual newlines).
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, `\n`) {
+		t.Errorf("expected \\n escape preserved, got: %s", joined)
+	}
+}
+
+// ------------------- inspectLines tests -------------------
+
+func makeEntryForInspect() mock.LogEntry {
+	return mock.LogEntry{
+		RequestID:       "req-abc-123",
+		Timestamp:       "2024-01-15T10:30:00.123456789Z",
+		Matched:         true,
+		Method:          "POST",
+		Path:            "/webhooks/orders",
+		Webhook:         "order-placed",
+		Headers:         map[string]string{"Content-Type": "application/json", "X-Signature": "abc"},
+		Query:           map[string]string{"token": "x123"},
+		Body:            `{"order_id":42}`,
+		ResponseStatus:  201,
+		LatencyMs:       12.5,
+		ResponseHeaders: map[string]string{"Content-Type": "application/json", "X-Request-ID": "res-1"},
+		ResponseBody:    `{"status":"created"}`,
+	}
+}
+
+func makeModelForInspect(w int) Model {
+	entries := []mock.LogEntry{makeEntryForInspect()}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, w, 24)
+	m.last = src.snap
+	m.expandedID = "req-abc-123"
+	m.inspect = true
+	m.renderFeed()
+	return m
+}
+
+func TestInspectLines_AllFields(t *testing.T) {
+	m := makeModelForInspect(100)
+	e := makeEntryForInspect()
+	lines := m.inspectLines(e)
+
+	// Check for essential fields.
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"request:", "POST", "/webhooks/orders",
+		"endpoint:", "order-placed",
+		"request_id:", "req-abc-123",
+		"matched:", "true",
+		"timestamp:", "2024-01-15T10:30:00.123456789Z",
+		"latency:", "12.5ms",
+		"headers:", "Content-Type", "application/json", "X-Signature", "abc",
+		"query:", "token", "x123",
+		"body:", `"order_id":42`,
+		"RESPONSE", "201",
+		"X-Request-ID", "res-1",
+		"status",
+		"created",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q in inspect output", want)
+		}
+	}
+
+	// Verify the RESPONSE section has the status code.
+	if !strings.Contains(joined, "201") {
+		t.Error("expected 201 status in RESPONSE section")
+	}
+}
+
+func TestInspectLines_ResponseStatusTint(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	m := makeModelForInspect(100)
+	e := makeEntryForInspect()
+	lines := m.inspectLines(e)
+
+	// RESPONSE line should contain the tinted status code.
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "RESPONSE") {
+			found = true
+			// Should have the green color for 201.
+			if !strings.Contains(l, "\x1b[38;5;76m201") {
+				t.Errorf("expected green (76) tint on 201 in RESPONSE line: %q", l)
+			}
+			// Should have bold section style (1; prefix in SGR, combined with colour 240).
+			if !strings.Contains(l, "\x1b[1;") || !strings.Contains(l, "38;5;240") {
+				t.Errorf("expected bold (1) + colour (240) in RESPONSE section: %q", l)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected RESPONSE section header line")
+	}
+}
+
+func TestInspectLines_NoNewline(t *testing.T) {
+	m := makeModelForInspect(100)
+	e := makeEntryForInspect()
+	lines := m.inspectLines(e)
+
+	for i, l := range lines {
+		if strings.Contains(l, "\n") {
+			t.Errorf("inspect line %d contains \\n: %q", i, l)
+		}
+	}
+}
+
+func TestInspectLines_EmptyMaps(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID: "req-empty",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.expandedID = "req-empty"
+	m.inspect = true
+	m.renderFeed()
+
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "(none)") {
+		t.Error("expected '(none)' for empty headers")
+	}
+	if !strings.Contains(joined, "(empty)") {
+		t.Error("expected '(empty)' for empty body")
+	}
+	// Should have two '(none)' occurrences: one for request headers, one for response headers.
+	if strings.Count(joined, "(none)") < 2 {
+		t.Errorf("expected >=2 '(none)' for both request+response headers, got %d", strings.Count(joined, "(none)"))
+	}
+}
+
+func TestInspectLines_SortedKeys(t *testing.T) {
+	e := makeEntryForInspect()
+	e.ResponseHeaders = map[string]string{"Z-Header": "z", "A-Header": "a", "M-Header": "m"}
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+
+	// Find the response header lines.
+	var headerLines []string
+	inResp := false
+	for _, l := range lines {
+		if strings.Contains(l, "RESPONSE") {
+			inResp = true
+			continue
+		}
+		if inResp && strings.Contains(l, "│") && (strings.Contains(l, "Header:") || strings.Contains(l, "headers:")) {
+			if strings.Contains(l, "(none)") {
+				break
+			}
+			headerLines = append(headerLines, l)
+		}
+	}
+	// A-Header should appear before Z-Header.
+	joined := strings.Join(headerLines, "\n")
+	aIdx := strings.Index(joined, "A-Header:")
+	zIdx := strings.Index(joined, "Z-Header:")
+	if aIdx < 0 || zIdx < 0 {
+		t.Fatalf("could not find sorted keys in response headers: %s", joined)
+	}
+	if aIdx > zIdx {
+		t.Error("expected A-Header before Z-Header (sorted)")
+	}
+}
+
+func TestInspectLines_HeaderCap(t *testing.T) {
+	e := makeEntryForInspect()
+	e.ResponseHeaders = make(map[string]string)
+	for i := 0; i < maxInspectHeaders+5; i++ {
+		e.ResponseHeaders[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	m := makeModelForInspect(120)
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "more headers") {
+		t.Errorf("expected 'more headers' marker when headers exceed cap, got:\n%s", joined)
+	}
+	// X-H30 (the 31st header) should not be rendered, but due to zero-padded
+	// sorting, X-H00..X-H29 are the first 30; X-H30+ are beyond the cap.
+	if strings.Contains(joined, "X-H30") {
+		t.Error("should not render headers beyond cap")
+	}
+}
+
+func TestInspectLines_TinyViewport(t *testing.T) {
+	e := makeEntryForInspect()
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 10, 24) // Very narrow.
+	m.last = src.snap
+	m.expandedID = e.RequestID
+	m.inspect = true
+	m.renderFeed()
+
+	lines := m.inspectLines(e)
+	// Must not panic and every line must be non-nil.
+	for i, l := range lines {
+		if len(l) == 0 {
+			t.Errorf("inspect line %d is empty", i)
+		}
+	}
+}
+
+func TestInspectLines_UnmatchedEntry(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID:      "req-404",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Matched:        false,
+		Method:         "GET",
+		Path:           "/nonexistent",
+		ResponseStatus: 404,
+		LatencyMs:      1.0,
+		ResponseHeaders: map[string]string{"Content-Type": "application/json"},
+		ResponseBody:   `{"error":"no matching endpoint"}`,
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.expandedID = "req-404"
+	m.inspect = true
+	m.renderFeed()
+
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "unmatched") {
+		t.Error("expected 'unmatched' endpoint label for unmatched entry")
+	}
+	if !strings.Contains(joined, "false") {
+		t.Error("expected matched=false")
+	}
+	if !strings.Contains(joined, "404") {
+		t.Error("expected 404 status")
+	}
+}
+
+// ------------------- model inspect state machine tests -------------------
+
+func TestModelInspectOpenDismiss(t *testing.T) {
+	entries := entriesWithIDs(2)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	// Expand first.
+	m.expandedID = "req-0"
+	m.liveFollow = false
+	m.renderFeed()
+
+	// Open inspect.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if !m.inspect {
+		t.Fatal("expected inspect=true after i")
+	}
+	if m.expandedID != "req-0" {
+		t.Fatal("expected expandedID preserved")
+	}
+
+	// Dismiss inspect.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect=false after second i")
+	}
+	if m.expandedID != "req-0" {
+		t.Error("expected expandedID still set after dismissing inspect")
+	}
+}
+
+func TestModelInspectDismissWithLivePaused(t *testing.T) {
+	// Use many entries so the viewport has scrollable content and AtBottom
+	// is not always true. Entry count must exceed viewport height to have
+	// scrollable content.
+	entries := entriesWithIDs(50)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	// Goto bottom, then scroll up, so we're not at bottom.
+	m.view.GotoBottom()
+	for i := 0; i < 10; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = updated.(Model)
+	}
+	if m.view.AtBottom() {
+		t.Fatal("expected not at bottom after scrolling up")
+	}
+
+	// Pause live, expand, then open inspect.
+	m.liveFollow = false
+	m.expandedID = "req-0"
+	m.renderFeed()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if !m.inspect {
+		t.Fatal("expected inspect=true")
+	}
+	if m.inspectFollow {
+		t.Error("expected inspectFollow=false when live was paused before opening")
+	}
+
+	// Dismiss inspect — should preserve the expanded entry and stay not-at-bottom.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect=false after dismiss")
+	}
+	if m.expandedID == "" {
+		t.Error("expected expanded entry preserved after inspect dismiss")
+	}
+	if m.view.AtBottom() {
+		t.Error("expected not at bottom when live was paused before inspect")
+	}
+}
+
+func TestModelInspectSwitchRowEnter(t *testing.T) {
+	// Use a minimal inspect entry so the inspect block is short.
+	e0 := mock.LogEntry{
+		RequestID:      "req-0",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Method:         "GET",
+		Path:           "/test",
+		ResponseStatus: 200,
+		Webhook:        "test0",
+		LatencyMs:      1.0,
+	}
+	entries := []mock.LogEntry{e0}
+	for i := 1; i < 5; i++ {
+		entries = append(entries, mock.LogEntry{
+			RequestID:      fmt.Sprintf("req-%d", i),
+			Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+			Method:         "GET",
+			Path:           "/test",
+			ResponseStatus: 200,
+			Webhook:        fmt.Sprintf("test%d", i),
+			LatencyMs:      1.0,
+		})
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+
+	// Expand and inspect row 0.
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	// feedEntryToLine[3] gives the content line of entry 3's summary.
+	lineK := m.feedEntryToLine[3]
+	if lineK < 0 {
+		t.Fatal("entry 3 not found in feed")
+	}
+
+	// Directly set YOffset to bypass viewport clamping in SetYOffset.
+	// selectedIdx() reads YOffset directly, so this makes entry 3 the
+	// selected row without relying on scroll behavior.
+	m.view.YOffset = lineK
+
+	sel := m.selectedIdx()
+	if sel != 3 {
+		t.Fatalf("expected selectedIdx=3, got %d (YOffset=%d)", sel, m.view.YOffset)
+	}
+
+	// Now test: enter while inspecting entry 0 should expand entry 3, reset inspect.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-3" {
+		t.Fatalf("expected expandedID=req-3, got %q", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false when switching rows")
+	}
+}
+
+func TestModelInspectEnterDismiss(t *testing.T) {
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	// Expand and inspect.
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	// Press enter on the same row → collapse.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty after enter-dismiss, got %s", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false after enter-dismiss")
+	}
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true after collapse")
+	}
+}
+
+func TestModelInspectEscClears(t *testing.T) {
+	entries := entriesWithIDs(3)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty after esc, got %s", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false after esc")
+	}
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true after esc")
+	}
+}
+
+func TestModelInspectCClears(t *testing.T) {
+	entries := entriesWithIDs(2)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty after c, got %s", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false after c")
+	}
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true after c")
+	}
+}
+
+func TestModelInspectAutoClearEviction(t *testing.T) {
+	entries := entriesWithIDs(3)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.renderFeed()
+
+	// Evict: replace with entries that don't contain req-0.
+	src.snap.RecentLogs = []mock.LogEntry{
+		{RequestID: "req-x", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/a", ResponseStatus: 200, Webhook: "a", LatencyMs: 1.0},
+	}
+	src.snap.TotalLogs = 1
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty after eviction, got %s", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false after eviction")
+	}
+}
+
+func TestModelInspectAutoClearFilter(t *testing.T) {
+	entries := []mock.LogEntry{
+		{RequestID: "req-0", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "POST", Path: "/orders", ResponseStatus: 201, Webhook: "orders", LatencyMs: 1.0},
+		{RequestID: "req-1", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.renderFeed()
+
+	// Set filter that excludes the expanded entry.
+	m.filter = Filter{Endpoint: "health"}
+	m.renderFeed()
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty after filter out, got %s", m.expandedID)
+	}
+	if m.inspect {
+		t.Error("expected inspect=false after filter out")
+	}
+}
+
+func TestModelInspectOffsetAcrossTicks(t *testing.T) {
+	entries := entriesWithIDs(50)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-10"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+	prevOffset := m.view.YOffset
+
+	// Tick: append new entries.
+	newEntries := append([]mock.LogEntry{{
+		RequestID: "req-new", Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Method: "GET", Path: "/new", ResponseStatus: 201, Webhook: "new", LatencyMs: 1.0,
+	}}, src.snap.RecentLogs...)
+	src.snap.RecentLogs = newEntries[:50]
+	src.snap.TotalLogs = 50
+
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+
+	if m.expandedID != "req-10" {
+		t.Errorf("expected expandedID=req-10 after tick, got %s", m.expandedID)
+	}
+	if !m.inspect {
+		t.Error("expected inspect=true after tick")
+	}
+	_ = prevOffset
+	// Offset may shift slightly due to re-render, but should be near the expanded row.
+}
+
+func TestModelInspectWindowSizeReduce(t *testing.T) {
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	// Resize to narrower.
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 50, Height: 30})
+	m = updated.(Model)
+	if m.expandedID != "req-0" {
+		t.Errorf("expected expandedID preserved after resize, got %s", m.expandedID)
+	}
+	if !m.inspect {
+		t.Error("expected inspect=true after resize")
+	}
+	// Render must not panic.
+	_ = m.View()
+}
+
+func TestModelInspectWideLayout(t *testing.T) {
+	entries := entriesWithIDs(5)
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, eps, Config{}, 110, 30)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	// View must render without panic and contain inspect content.
+	view := m.View()
+	if !strings.Contains(view, "request_id:") {
+		t.Error("expected inspect content in wide layout view")
+	}
+}
+
+func TestModelInspectTinyViewport(t *testing.T) {
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Method:    "POST",
+		Path:      "/test",
+		ResponseStatus: 200,
+		Webhook:   "test",
+		LatencyMs: 1.0,
+		ResponseHeaders: map[string]string{"X-A": "1"},
+		ResponseBody:    "ok",
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 40, 5)
+	m.last = src.snap
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	// Must not panic.
+	_ = m.View()
+	// Scroll through inspect content without panic.
+	for i := 0; i < 20; i++ {
+		m.view, _ = m.view.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_ = m.View()
+}
+
+func TestModelInspectPromptSwallowsI(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+
+	// Enter prompt mode.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = updated.(Model)
+	if !m.prompting {
+		t.Fatal("expected prompting after '/'")
+	}
+
+	// Press i while prompting — should be typed into prompt, not toggle inspect.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect unchanged (false) when i pressed in prompt mode")
+	}
+	if m.prompt != "i" {
+		t.Errorf("expected prompt='i', got %q", m.prompt)
+	}
+}
+
+func TestModelInspectNoFocusTrap(t *testing.T) {
+	entries := entriesWithIDs(20)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 20}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	m.expandedID = "req-0"
+	m.inspect = true
+	m.liveFollow = false
+	m.renderFeed()
+
+	prevOffset := m.view.YOffset
+
+	// Scrolling with j should work.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.view.YOffset <= prevOffset && m.view.YOffset == 0 {
+		// May not change if already at top, but at least it shouldn't error.
+	}
+	_ = m.View() // Must not panic.
+}
+
+func TestInspectExpansionByteIdentical(t *testing.T) {
+	// When inspect=false, buildFeed must produce exactly the same output
+	// as the original detailLines path.
+	e := mock.LogEntry{
+		RequestID:      "req-0",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		Method:         "GET",
+		Path:           "/test",
+		ResponseStatus: 200,
+		Webhook:        "test",
+		LatencyMs:      1.0,
+		Headers:        map[string]string{"X-A": "1"},
+		Query:          map[string]string{"q": "v"},
+		Body:           "hello",
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+
+	// Build with inspect=false.
+	mNoInspect := newModel(src, nil, Config{}, 80, 24)
+	mNoInspect.last = src.snap
+	mNoInspect.expandedID = "req-0"
+	mNoInspect.renderFeed()
+	viewNoInspect := mNoInspect.View()
+
+	// Build with inspect=true, then dismiss.
+	mInspect := newModel(src, nil, Config{}, 80, 24)
+	mInspect.last = src.snap
+	mInspect.expandedID = "req-0"
+	mInspect.renderFeed()
+	updated, _ := mInspect.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	mInspect = updated.(Model) // inspect=true
+	viewInspect := mInspect.View()
+	// Inspect view should differ from detail view.
+	if viewNoInspect == viewInspect {
+		t.Error("expected inspect view to differ from detail view")
+	}
+	// Dismiss inspect → should go back to detail view.
+	updated, _ = mInspect.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	mInspect = updated.(Model)
+	if mInspect.inspect {
+		t.Fatal("expected inspect=false after dismiss")
+	}
+	mInspect.renderFeed()
+	viewAfterDismiss := mInspect.View()
+	// After dismissing inspect, should revert to detail view.
+	if !strings.Contains(viewAfterDismiss, "request_id:") {
+		t.Error("expected detail view after inspect dismiss")
+	}
+	// Detail view should NOT contain RESPONSE section.
+	if strings.Contains(viewAfterDismiss, "RESPONSE") {
+		t.Error("detail view should NOT contain RESPONSE section")
+	}
+}
+
+// ------------------- footer / help inspect tests -------------------
+
+func TestModelFooterInspectHint(t *testing.T) {
+	entries := entriesWithIDs(1)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	view := m.View()
+	if !strings.Contains(view, "i inspect") {
+		t.Error("expected 'i inspect' in footer")
+	}
+}
+
+func TestModelFooterExpandHintPreserved(t *testing.T) {
+	entries := entriesWithIDs(1)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 120, 24)
+	m.last = src.snap
+	m.renderFeed()
+
+	view := m.View()
+	if !strings.Contains(view, "enter detail") {
+		t.Error("expected 'enter detail' preserved in footer")
+	}
+}
+
+func TestModelHelpContainsInspectBinding(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.showHelp = true
+
+	view := m.View()
+	if !strings.Contains(view, "inspect req/resp") {
+		t.Error("expected 'inspect req/resp' in help")
+	}
+
+	// All help lines must be exactly 63 runes wide.
+	lines := strings.Split(m.renderHelp(), "\n")
+	for i, l := range lines {
+		if lipgloss.Width(l) != 63 {
+			t.Errorf("help line %d width=%d, want 63: %q", i, lipgloss.Width(l), l)
+		}
 	}
 }

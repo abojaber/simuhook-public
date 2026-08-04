@@ -779,3 +779,235 @@ func TestNewHandler_NilRegistryPanics(t *testing.T) {
 	}()
 	NewHandler(HandlerConfig{})
 }
+
+// ---------------------------------------------------------------------------
+// WS-018 / UXR-013 — response headers + body capture
+// ---------------------------------------------------------------------------
+
+func TestHandler_ResponseHeadersAndBody_Matched(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "resp-cap",
+		Method: "GET",
+		Path:   "/resp",
+		Response: Response{
+			StatusCode: 201,
+			Body:       []byte(`{"msg":"ok"}`),
+			Headers:    map[string]string{"X-Resp": "val", "Content-Type": "application/json"},
+		},
+	}
+	obs, ch := recordingObserver()
+	_, _ = testHandler(t, ep, obs)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/resp", nil)
+
+	// Need to go through Handler.ServeHTTP since the observer is wired there.
+	// We'll use the handler from testHandler.
+	// testHandler returns (Handler, Registry) — we need the handler.
+	// Re-create with proper wiring.
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:  r,
+		Observers: []func(LogEntry){obs},
+	})
+	h.ServeHTTP(rec, req)
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseStatus != 201 {
+			t.Fatalf("expected ResponseStatus 201, got %d", entry.ResponseStatus)
+		}
+		if entry.ResponseBody != `{"msg":"ok"}` {
+			t.Fatalf("expected ResponseBody '{\"msg\":\"ok\"}', got %q", entry.ResponseBody)
+		}
+		if entry.ResponseHeaders["X-Resp"] != "val" {
+			t.Fatalf("expected ResponseHeaders[X-Resp]=val, got %q", entry.ResponseHeaders["X-Resp"])
+		}
+		if entry.ResponseHeaders["Content-Type"] != "application/json" {
+			t.Fatalf("expected ResponseHeaders[Content-Type], got %v", entry.ResponseHeaders)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_ResponseHeadersAndBody_Echo(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "echo-resp",
+		Method: "POST",
+		Path:   "/echo-resp",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`ignored`),
+			Echo:       true,
+			Headers:    map[string]string{"X-Mode": "echo"},
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:  r,
+		Observers: []func(LogEntry){obs},
+	})
+
+	payload := `{"hello":"world"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/echo-resp", strings.NewReader(payload)))
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseBody != payload {
+			t.Fatalf("echo response body must match request body: got %q, want %q", entry.ResponseBody, payload)
+		}
+		if entry.ResponseHeaders["X-Mode"] != "echo" {
+			t.Fatalf("expected X-Mode=echo, got %q", entry.ResponseHeaders["X-Mode"])
+		}
+		if entry.Body != payload {
+			t.Fatalf("request body should also be captured: got %q, want %q", entry.Body, payload)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_ResponseHeadersAndBody_Template(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "tmpl-resp",
+		Method: "POST",
+		Path:   "/tmpl-resp",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`{{.Method}}`),
+			Template:   true,
+			Headers:    map[string]string{"X-Tmpl": "yes"},
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:  r,
+		Observers: []func(LogEntry){obs},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/tmpl-resp", nil))
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseBody != "POST" {
+			t.Fatalf("template response body must be rendered: got %q, want 'POST'", entry.ResponseBody)
+		}
+		if entry.ResponseHeaders["X-Tmpl"] != "yes" {
+			t.Fatalf("expected X-Tmpl=yes, got %q", entry.ResponseHeaders["X-Tmpl"])
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_ResponseHeadersAndBody_Variant(t *testing.T) {
+	ep := &Endpoint{
+		ID:   "var-resp",
+		Path: "/var-resp",
+		Responses: []Response{
+			{StatusCode: 200, Body: []byte(`first`), Headers: map[string]string{"X-Var": "1"}},
+			{StatusCode: 200, Body: []byte(`second`), Headers: map[string]string{"X-Var": "2"}},
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:  r,
+		Observers: []func(LogEntry){obs},
+	})
+
+	// Call twice to exercise both variants.
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/var-resp", nil))
+	}
+	// After two calls, we should have entries for both variants.
+	results := make([]LogEntry, 0, 2)
+	for i := 0; i < 2; i++ {
+		select {
+		case entry := <-ch:
+			results = append(results, entry)
+		default:
+		}
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 observer calls, got %d", len(results))
+	}
+	// Each call must have a non-empty response body.
+	for i, entry := range results {
+		if entry.ResponseBody == "" {
+			t.Errorf("variant %d: expected non-empty response body", i)
+		}
+		if entry.ResponseHeaders["X-Var"] == "" {
+			t.Errorf("variant %d: expected X-Var header", i)
+		}
+	}
+}
+
+func TestHandler_ResponseHeadersAndBody_Unmatched(t *testing.T) {
+	obs, ch := recordingObserver()
+	h := NewHandler(HandlerConfig{
+		Registry:  NewRegistry(),
+		Observers: []func(LogEntry){obs},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseStatus != 404 {
+			t.Fatalf("expected 404, got %d", entry.ResponseStatus)
+		}
+		if entry.ResponseBody != `{"error":"no matching endpoint"}` {
+			t.Fatalf("expected error body, got %q", entry.ResponseBody)
+		}
+		if entry.ResponseHeaders["Content-Type"] != "application/json" {
+			t.Fatalf("expected Content-Type in response headers, got %v", entry.ResponseHeaders)
+		}
+		if entry.Body != "" {
+			t.Fatalf("request body should be empty, got %q", entry.Body)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_ResponseHeaders_DefaultStatusCodeHasHeaders(t *testing.T) {
+	ep := &Endpoint{
+		ID:       "def-hdr",
+		Path:     "/def-hdr",
+		Response: Response{StatusCode: 0, Body: []byte(`ok`), Headers: map[string]string{"X-Def": "1"}},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:  r,
+		Observers: []func(LogEntry){obs},
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/def-hdr", nil))
+
+	select {
+	case entry := <-ch:
+		if entry.ResponseStatus != 200 {
+			t.Fatalf("expected default 200, got %d", entry.ResponseStatus)
+		}
+		if entry.ResponseHeaders["X-Def"] != "1" {
+			t.Fatalf("expected X-Def=1, got %q", entry.ResponseHeaders["X-Def"])
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}

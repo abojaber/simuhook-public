@@ -183,6 +183,10 @@ type Model struct {
 	feedEntries     []mock.LogEntry // displayed (filtered) entries backing current content
 	feedLineToEntry []int           // content line -> index into feedEntries, or -1
 	feedEntryToLine []int           // feedEntries index -> content line of its summary line
+
+	// WS-018 / UXR-013 — request/response inspector.
+	inspect       bool // inspect mode active (only when expandedID != "")
+	inspectFollow bool // preserved live-follow state for dismiss
 }
 
 func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
@@ -340,13 +344,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if id == m.expandedID {
 			// Collapse: resume live-follow and re-anchor to bottom.
 			m.expandedID = ""
+			m.inspect = false
 			m.liveFollow = true
 			m.renderFeed()
 			m.view.GotoBottom()
 			return m, nil
 		}
-		// Expand (single expanded row at a time).
+		// Expand (single expanded row at a time). inspect resets to false
+		// when switching to a different row.
 		m.expandedID = id
+		m.inspect = false
 		m.liveFollow = false
 		m.renderFeed()
 		if line := m.expandedSummaryLine(); line >= 0 {
@@ -412,6 +419,36 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyGeometry()
 		m.syncFeed()
 		m.syncEndpoints()
+		return m, nil
+
+	// WS-018 / UXR-013 — toggle request/response inspector.
+	case s == "i" && !m.prompting:
+		if m.expandedID == "" {
+			return m, nil
+		}
+		if m.inspect {
+			// Dismiss inspect: preserve position before clearing.
+			selBefore := m.selectedIdx()
+			m.inspect = false
+			m.renderFeed()
+			if !m.inspectFollow && selBefore >= 0 {
+				if line := m.feedEntryToLine[selBefore]; line >= 0 {
+					m.view.SetYOffset(line)
+				}
+			}
+			if m.inspectFollow {
+				m.view.GotoBottom()
+			}
+			return m, nil
+		}
+		// Open inspect.
+		m.inspectFollow = m.liveFollow
+		m.inspect = true
+		m.liveFollow = false
+		m.renderFeed()
+		if line := m.expandedSummaryLine(); line >= 0 {
+			m.view.SetYOffset(line)
+		}
 		return m, nil
 
 	// UXR-009 — left-panel independent scroll (wide layout only).
@@ -509,6 +546,7 @@ func (m *Model) collapseExpansion() bool {
 		return false
 	}
 	m.expandedID = ""
+	m.inspect = false
 	m.liveFollow = true
 	return true
 }
@@ -542,6 +580,7 @@ func (m *Model) renderFeed() {
 	m.view.SetContent(fr.content)
 	if m.expandedID != "" && !fr.expandedHit {
 		m.expandedID = ""
+		m.inspect = false
 	}
 }
 

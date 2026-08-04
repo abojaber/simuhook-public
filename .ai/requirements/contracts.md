@@ -59,9 +59,14 @@ responses:               # optional: multiple response variants
   "query": {},
   "response_status": 200,
   "latency_ms": 45.2,
-  "matched": true
+  "matched": true,
+  "response_headers": {
+    "Content-Type": "application/json"
+  },
+  "response_body": "{\"status\":\"ok\"}"
 }
 ```
+> **WS-018 / UXR-013:** `response_headers` is always an object (never null); only headers Simuhock explicitly set via `w.Header().Set()` are captured (not Content-Length, Date, or sniffed Content-Type). `response_body` is the exact bytes sent, uncapped; for echo endpoints the request body appears here too (carried as the response). Both fields are additive — existing log consumers can ignore unknown keys.
 
 ---
 

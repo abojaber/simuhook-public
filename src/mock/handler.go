@@ -131,18 +131,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	latency := h.now().Sub(start)
 
+	// Capture response headers and body for logging (WS-018 / UXR-013).
+	respHeaders := make(map[string]string)
+	for k := range w.Header() {
+		respHeaders[k] = w.Header().Get(k)
+	}
+
 	entry := LogEntry{
-		Timestamp:      start.UTC().Format(time.RFC3339Nano),
-		RequestID:      requestID,
-		Webhook:        webhookName,
-		Method:         r.Method,
-		Path:           r.URL.Path,
-		Headers:        headers,
-		Body:           string(body),
-		Query:          query,
-		ResponseStatus: responseStatus,
-		LatencyMs:      float64(latency.Microseconds()) / 1000.0,
-		Matched:        ep != nil,
+		Timestamp:       start.UTC().Format(time.RFC3339Nano),
+		RequestID:       requestID,
+		Webhook:         webhookName,
+		Method:          r.Method,
+		Path:            r.URL.Path,
+		Headers:         headers,
+		Body:            string(body),
+		Query:           query,
+		ResponseStatus:  responseStatus,
+		LatencyMs:       float64(latency.Microseconds()) / 1000.0,
+		Matched:         ep != nil,
+		ResponseHeaders: respHeaders,
+		ResponseBody:    string(responseBody),
 	}
 
 	for _, o := range h.observers {

@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -26,6 +28,17 @@ var (
 	// UXR-008 — feed row expansion styles.
 	styleSelBG     = lipgloss.NewStyle().Background(lipgloss.Color("236"))
 	styleSelMarker = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("212")).Bold(true)
+
+	// WS-018 / UXR-013 — request/response inspector.
+	styleSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
+)
+
+// WS-018 / UXR-013 — inspect formatting constants.
+const (
+	maxInspectBodyBytes = 4096
+	maxInspectBodyLines = 40
+	maxInspectJSONBytes = 262576
+	maxInspectHeaders   = 30
 )
 
 // ------------------- UXR-001 helpers -------------------
@@ -133,7 +146,7 @@ func (m Model) viewNarrow() string {
 	if m.prompting {
 		footerBuilder.WriteString(m.renderPromptBar())
 	} else {
-		footerBuilder.WriteString(m.renderFooter())
+		footerBuilder.WriteString(truncPlain(m.renderFooter(), m.width))
 	}
 
 	parts := []string{header, feed, footerBuilder.String()}
@@ -162,7 +175,7 @@ func (m Model) viewWide() string {
 	if m.prompting {
 		footerBuilder.WriteString(m.renderPromptBar())
 	} else {
-		footerBuilder.WriteString(m.renderFooter())
+		footerBuilder.WriteString(truncPlain(m.renderFooter(), m.width))
 	}
 
 	parts := []string{title, info, detail, metrics, panels, footerBuilder.String()}
@@ -508,7 +521,7 @@ func (m Model) renderFooter() string {
 		footer += "⏸ live · "
 	}
 
-	footer += "q quit · r refresh · enter detail"
+	footer += "q quit · r refresh · enter detail · i inspect"
 
 	if m.filter != (Filter{}) {
 		footer += " · filter: " + m.filter.String()
@@ -553,7 +566,7 @@ func (m Model) renderHelp() string {
 		styleMuted.Render("│  r       refresh now          ?       toggle this help      │"),
 		styleMuted.Render("│  c       clear filter         q       quit                  │"),
 		styleMuted.Render("│  L       pause/resume live    e       collapse endpoints    │"),
-		styleMuted.Render("│  enter   expand/collapse row                                │"),
+		styleMuted.Render("│  enter   expand/collapse row  i       inspect req/resp      │"),
 		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
 		styleMuted.Render("│  shift+↑/↓ K/J scroll endpoints esc   cancel / clear filter │"),
 		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
@@ -673,6 +686,234 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 	return result
 }
 
+// ------------------- WS-018 / UXR-013 — request/response inspector -------------------
+
+// formatBody renders a raw response body for the inspector. Returns nil when
+// raw is empty. Pretty-prints valid JSON up to maxInspectJSONBytes; otherwise
+// renders as plain text rune-safe truncated to maxInspectBodyBytes. Lines are
+// capped to maxInspectBodyLines with a "… truncated (N bytes)" marker.
+func formatBody(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+
+	// JSON pretty-print path (within size cap).
+	if len(raw) <= maxInspectJSONBytes {
+		var buf bytes.Buffer
+		if json.Indent(&buf, []byte(raw), "", "  ") == nil && buf.Len() > 0 {
+			trimmed := strings.TrimRight(buf.String(), "\n")
+			if trimmed == "" {
+				trimmed = buf.String()
+			}
+			lines := strings.Split(trimmed, "\n")
+			return capLines(lines, maxInspectBodyLines, maxInspectBodyBytes)
+		}
+	}
+
+	// Plain text path — rune-safe truncation.
+	return plainBody(raw, maxInspectBodyBytes, maxInspectBodyLines)
+}
+
+// capLines enforces a per-line byte cap and a total line cap. Lines exceeding
+// maxLineBytes are truncated rune-safe with "…". If the number of lines exceeds
+// maxLines, extra lines are dropped and a "… truncated (...)" marker is appended.
+func capLines(lines []string, maxLines, maxLineBytes int) []string {
+	var out []string
+	truncated := false
+	for i, line := range lines {
+		if i >= maxLines {
+			truncated = true
+			break
+		}
+		// Strip trailing \r (Windows line endings).
+		line = strings.TrimRight(line, "\r")
+		// Rune-safe truncation to maxLineBytes.
+		if len(line) > maxLineBytes {
+			line = truncPlain(line, maxLineBytes)
+		}
+		out = append(out, sanitize(line))
+	}
+	if truncated {
+		out = append(out, fmt.Sprintf("… truncated (%d lines)", len(lines)))
+	}
+	return out
+}
+
+// plainBody renders a non-JSON body as plain text, rune-safe truncated.
+func plainBody(raw string, maxBytes, maxLines int) []string {
+	if len(raw) > maxBytes {
+		raw = raw[:maxBytes]
+	}
+	// Strip trailing \r\n and \r.
+	raw = strings.TrimRight(raw, "\r\n")
+	rawLines := strings.Split(raw, "\n")
+	// Drop trailing empty lines from split.
+	for len(rawLines) > 0 && rawLines[len(rawLines)-1] == "" {
+		rawLines = rawLines[:len(rawLines)-1]
+	}
+	origLen := len(rawLines)
+	if len(rawLines) > maxLines {
+		rawLines = rawLines[:maxLines]
+	}
+	var out []string
+	for _, l := range rawLines {
+		l = strings.TrimRight(l, "\r")
+		l = sanitize(l)
+		out = append(out, l)
+	}
+	if origLen > maxLines {
+		out = append(out, fmt.Sprintf("… truncated (%d lines)", origLen))
+	}
+	return out
+}
+
+// inspectLines returns the inspector-detail lines for a log entry. The gutter
+// is "  │ " (gutterWidth=4). Keys are sorted for determinism. Includes both
+// request and response sections. Every returned line is guaranteed to contain
+// no \n characters (line-to-entry mapping invariant).
+func (m Model) inspectLines(e mock.LogEntry) []string {
+	const gutterWidth = 4
+	gutter := styleMuted.Render("  │ ")
+	contentW := m.view.Width - gutterWidth
+	if contentW < 1 {
+		contentW = 1
+	}
+
+	var plain []string
+
+	// --- REQUEST section ---
+	// Fixed fields.
+	plain = append(plain, fmt.Sprintf("%-12s %s %s", "request:", sanitize(e.Method), sanitize(e.Path)))
+	webhook := e.Webhook
+	if webhook == "" {
+		webhook = "unmatched"
+	}
+	plain = append(plain, fmt.Sprintf("%-12s %s", "endpoint:", sanitize(webhook)))
+	plain = append(plain, fmt.Sprintf("%-12s %s", "request_id:", e.RequestID))
+	matched := "false"
+	if e.Matched {
+		matched = "true"
+	}
+	plain = append(plain, fmt.Sprintf("%-12s %s", "matched:", matched))
+	plain = append(plain, fmt.Sprintf("%-12s %s", "timestamp:", e.Timestamp))
+	plain = append(plain, fmt.Sprintf("%-12s %.1fms", "latency:", e.LatencyMs))
+
+	// Request headers block.
+	if len(e.Headers) == 0 {
+		plain = append(plain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
+	} else {
+		plain = append(plain, "headers:")
+		keys := make([]string, 0, len(e.Headers))
+		for k := range e.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		count := 0
+		for _, k := range keys {
+			if count >= maxInspectHeaders {
+				plain = append(plain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxInspectHeaders)))
+				break
+			}
+			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])))
+			count++
+		}
+	}
+
+	// Query block.
+	if len(e.Query) == 0 {
+		plain = append(plain, fmt.Sprintf("%-12s %s", "query:", "(none)"))
+	} else {
+		plain = append(plain, "query:")
+		keys := make([]string, 0, len(e.Query))
+		for k := range e.Query {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])))
+		}
+	}
+
+	// Request body.
+	if e.Body == "" {
+		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
+	} else {
+		body := sanitize(e.Body)
+		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", body))
+	}
+
+	// --- RESPONSE section ---
+
+	// Build RESPONSE section header with status tint (segment-wise).
+	respHead := styleSection.Render(gutter + fmt.Sprintf("%-12s", "RESPONSE")) + tint(e.ResponseStatus)
+	if lipgloss.Width(respHead) > m.view.Width {
+		// Degraded: width overflow, render untinted.
+		respHead = styleMuted.Render(gutter + fmt.Sprintf("%-12s %d", "RESPONSE", e.ResponseStatus))
+	}
+	// respHead is already styled, put it directly into the result.
+
+	// For plain lines we'll build them and then apply gutter/mute at the end.
+	// But respHead bypasses the normal gutter application since it has a tinted
+	// segment. We handle it specially.
+
+	// Response headers block.
+	var respPlain []string
+	if len(e.ResponseHeaders) == 0 {
+		respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
+	} else {
+		respPlain = append(respPlain, "headers:")
+		keys := make([]string, 0, len(e.ResponseHeaders))
+		for k := range e.ResponseHeaders {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		count := 0
+		for _, k := range keys {
+			if count >= maxInspectHeaders {
+				respPlain = append(respPlain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxInspectHeaders)))
+				break
+			}
+			respPlain = append(respPlain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.ResponseHeaders[k])))
+			count++
+		}
+	}
+
+	// Response body.
+	var bodyLines []string
+	if e.ResponseBody == "" {
+		respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
+	} else {
+		bodyLines = formatBody(e.ResponseBody)
+		if len(bodyLines) == 0 {
+			respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
+		} else {
+			firstLine := bodyLines[0]
+			respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", firstLine))
+			for i := 1; i < len(bodyLines); i++ {
+				respPlain = append(respPlain, fmt.Sprintf("  %s", bodyLines[i]))
+			}
+		}
+	}
+
+	// Assemble result: plain request lines (with gutter), RESPONSE header (pre-styled), response lines (with gutter).
+	result := make([]string, 0, len(plain)+1+len(respPlain))
+
+	for _, line := range plain {
+		truncated := truncPlain(line, contentW)
+		result = append(result, styleMuted.Render("  │ "+truncated))
+	}
+
+	// RESPONSE section header (already styled).
+	result = append(result, truncPlain(respHead, m.view.Width))
+
+	for _, line := range respPlain {
+		truncated := truncPlain(line, contentW)
+		result = append(result, styleMuted.Render("  │ "+truncated))
+	}
+
+	return result
+}
+
 // buildFeed formats recent log entries into a feedRender for the viewport.
 // Pure (value receiver, no mutation). When selected >= 0, the corresponding
 // entry's summary line is rendered with highlight styling.
@@ -707,8 +948,14 @@ func (m Model) buildFeed(selected int) feedRender {
 
 		if e.RequestID != "" && e.RequestID == m.expandedID {
 			expandedHit = true
-			for _, dl := range m.detailLines(e) {
-				sb.WriteString(dl)
+			var dl []string
+			if m.inspect {
+				dl = m.inspectLines(e)
+			} else {
+				dl = m.detailLines(e)
+			}
+			for _, ln := range dl {
+				sb.WriteString(ln)
 				sb.WriteByte('\n')
 				lineToEntry = append(lineToEntry, idx)
 			}

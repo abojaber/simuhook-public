@@ -10,17 +10,19 @@ import (
 
 // LogEntry represents a single logged request, written as JSON Lines.
 type LogEntry struct {
-	Timestamp      string            `json:"timestamp"`
-	RequestID      string            `json:"request_id"`
-	Webhook        string            `json:"webhook"`
-	Method         string            `json:"method"`
-	Path           string            `json:"path"`
-	Headers        map[string]string `json:"headers"`
-	Body           string            `json:"body"`
-	Query          map[string]string `json:"query"`
-	ResponseStatus int               `json:"response_status"`
-	LatencyMs      float64           `json:"latency_ms"`
-	Matched        bool              `json:"matched"`
+	Timestamp       string            `json:"timestamp"`
+	RequestID       string            `json:"request_id"`
+	Webhook         string            `json:"webhook"`
+	Method          string            `json:"method"`
+	Path            string            `json:"path"`
+	Headers         map[string]string `json:"headers"`
+	Body            string            `json:"body"`
+	Query           map[string]string `json:"query"`
+	ResponseStatus  int               `json:"response_status"`
+	LatencyMs       float64           `json:"latency_ms"`
+	Matched         bool              `json:"matched"`
+	ResponseHeaders map[string]string `json:"response_headers"`
+	ResponseBody    string            `json:"response_body"`
 }
 
 // Logger writes JSON log entries to per-webhook files under a log directory.
@@ -42,6 +44,9 @@ func NewLogger(dir string) *Logger {
 // Log writes a single log entry to <dir>/<webhook>.log.
 // For unmatched requests (webhook == ""), the file is named _unmatched.log.
 func (l *Logger) Log(entry LogEntry) error {
+	if entry.ResponseHeaders == nil {
+		entry.ResponseHeaders = map[string]string{}
+	}
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("marshal log entry: %w", err)

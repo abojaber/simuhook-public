@@ -5,15 +5,17 @@ import (
 	"io"
 	"net/http"
 	"time"
+	"unicode/utf8"
 )
 
 // Handler serves the mock surface: it matches each request against the
 // registry and writes the configured response. It is the single source of
 // truth for request handling — main and tests must both go through it.
 type Handler struct {
-	registry  *Registry
-	observers []func(LogEntry)
-	now       func() time.Time
+	registry     *Registry
+	observers    []func(LogEntry)
+	now          func() time.Time
+	maxBodyBytes int
 }
 
 // HandlerConfig wires a Handler to its collaborators.
@@ -21,6 +23,13 @@ type HandlerConfig struct {
 	Registry  *Registry        // required; NewHandler panics if nil
 	Observers []func(LogEntry) // called in order, synchronously, after the response is written. Must not block or panic.
 	Now       func() time.Time // optional; defaults to time.Now (test seam)
+
+	// MaxBodyBytes caps the length of LogEntry.Body / LogEntry.ResponseBody
+	// (rune-safe truncation) before observers run. 0 (default) = unlimited.
+	// This is a capture-time-only cap: it never affects the bytes written
+	// to the actual HTTP response, nor echo/template rendering — both use
+	// the full, uncapped body.
+	MaxBodyBytes int
 }
 
 // NewHandler creates a new Handler. It panics if cfg.Registry is nil.
@@ -33,9 +42,10 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		now = time.Now
 	}
 	return &Handler{
-		registry:  cfg.Registry,
-		observers: append(make([]func(LogEntry), 0, len(cfg.Observers)), cfg.Observers...),
-		now:       now,
+		registry:     cfg.Registry,
+		observers:    append(make([]func(LogEntry), 0, len(cfg.Observers)), cfg.Observers...),
+		now:          now,
+		maxBodyBytes: cfg.MaxBodyBytes,
 	}
 }
 
@@ -144,13 +154,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Method:          r.Method,
 		Path:            r.URL.Path,
 		Headers:         headers,
-		Body:            string(body),
+		Body:            truncateRuneSafe(string(body), h.maxBodyBytes),
 		Query:           query,
 		ResponseStatus:  responseStatus,
 		LatencyMs:       float64(latency.Microseconds()) / 1000.0,
 		Matched:         ep != nil,
 		ResponseHeaders: respHeaders,
-		ResponseBody:    string(responseBody),
+		ResponseBody:    truncateRuneSafe(string(responseBody), h.maxBodyBytes),
 	}
 
 	for _, o := range h.observers {
@@ -177,4 +187,20 @@ func FormatRequestLine(e LogEntry) string {
 	statusLine := fmt.Sprintf("%d", e.ResponseStatus)
 
 	return fmt.Sprintf("%s  %s %s → %s  (%s)", timeStr, methodPad, e.Path, statusLine, name)
+}
+
+// truncateRuneSafe returns s unchanged when max <= 0 (unlimited) or s is
+// already within the limit. Otherwise it truncates s to at most max bytes,
+// walking back to the nearest rune boundary so a multi-byte UTF-8 sequence
+// straddling the cap is never split — the trailing partial rune is dropped
+// entirely rather than emitting invalid bytes.
+func truncateRuneSafe(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	i := max
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i]
 }

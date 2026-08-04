@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ func main() {
 	logDir := flag.String("log-dir", "logs", "log directory")
 	tui := flag.String("tui", "auto", "dashboard mode: auto|on|off")
 	recent := flag.Int("recent", 50, "recent log ring buffer size")
+	maxLogBody := flag.Int("max-log-body", 0, "cap stored request/response body size in bytes for logs and dashboard (0 = unlimited)")
 	flag.Parse()
 
 	if *tui != "auto" && *tui != "on" && *tui != "off" {
@@ -32,6 +34,9 @@ func main() {
 	}
 	if *recent <= 0 {
 		log.Fatalf("invalid --recent %d: must be > 0", *recent)
+	}
+	if *maxLogBody < 0 {
+		log.Fatalf("invalid --max-log-body %d: must be >= 0 (0 = unlimited)", *maxLogBody)
 	}
 
 	if v := os.Getenv("PORT"); v != "" && *addr == ":8080" {
@@ -42,6 +47,13 @@ func main() {
 	}
 	if v := os.Getenv("LOG_DIR"); v != "" {
 		*logDir = v
+	}
+	if v := os.Getenv("LOG_MAX_BODY"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			log.Fatalf("invalid LOG_MAX_BODY %q: must be a non-negative integer", v)
+		}
+		*maxLogBody = n
 	}
 
 	ln, err := net.Listen("tcp", *addr)
@@ -172,8 +184,9 @@ func main() {
 		})
 	}
 	mux.Handle("/", mock.NewHandler(mock.HandlerConfig{
-		Registry:  registry,
-		Observers: observers,
+		Registry:     registry,
+		Observers:    observers,
+		MaxBodyBytes: *maxLogBody,
 	}))
 
 	srv := &http.Server{Addr: *addr, Handler: mux}

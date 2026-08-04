@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // ---------------------------------------------------------------------------
@@ -1009,5 +1010,157 @@ func TestHandler_ResponseHeaders_DefaultStatusCodeHasHeaders(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected an observer call")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// --max-log-body / HandlerConfig.MaxBodyBytes (backlog: max-log-body-cap)
+// ---------------------------------------------------------------------------
+
+func TestHandler_MaxBodyBytes_TruncatesLoggedBodies(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "cap-echo",
+		Method: "POST",
+		Path:   "/cap-echo",
+		Response: Response{
+			StatusCode: 200,
+			Echo:       true,
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:     r,
+		Observers:    []func(LogEntry){obs},
+		MaxBodyBytes: 5,
+	})
+
+	payload := "hello world, this is a long body"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/cap-echo", strings.NewReader(payload)))
+
+	// The actual wire response (echo) must remain full-length — the cap is
+	// capture-time-only and must never affect what the client receives.
+	if rec.Body.String() != payload {
+		t.Fatalf("wire response must be uncapped: got %q, want %q", rec.Body.String(), payload)
+	}
+
+	select {
+	case entry := <-ch:
+		if entry.Body != "hello" {
+			t.Errorf("expected entry.Body capped to 5 bytes ('hello'), got %q", entry.Body)
+		}
+		if entry.ResponseBody != "hello" {
+			t.Errorf("expected entry.ResponseBody capped to 5 bytes ('hello'), got %q", entry.ResponseBody)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_MaxBodyBytes_RuneSafeTruncation(t *testing.T) {
+	// "café" is 5 bytes ("caf" + 2-byte 'é'); capping at 4 bytes would split
+	// the 'é' mid-rune unless truncation walks back to the boundary.
+	ep := &Endpoint{
+		ID:     "cap-rune",
+		Method: "POST",
+		Path:   "/cap-rune",
+		Response: Response{
+			StatusCode: 200,
+			Echo:       true,
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:     r,
+		Observers:    []func(LogEntry){obs},
+		MaxBodyBytes: 4,
+	})
+
+	payload := "café"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/cap-rune", strings.NewReader(payload)))
+
+	select {
+	case entry := <-ch:
+		if !utf8.ValidString(entry.Body) {
+			t.Errorf("truncated body is not valid UTF-8: %q", entry.Body)
+		}
+		if len(entry.Body) > 4 {
+			t.Errorf("truncated body exceeds cap: %q (%d bytes)", entry.Body, len(entry.Body))
+		}
+		if entry.Body != "caf" {
+			t.Errorf("expected the incomplete trailing rune dropped ('caf'), got %q", entry.Body)
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestHandler_MaxBodyBytes_ZeroIsUnlimited(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "cap-unlimited",
+		Method: "POST",
+		Path:   "/cap-unlimited",
+		Response: Response{
+			StatusCode: 200,
+			Echo:       true,
+		},
+	}
+	obs, ch := recordingObserver()
+	r := NewRegistry()
+	r.Add(ep)
+	h := NewHandler(HandlerConfig{
+		Registry:     r,
+		Observers:    []func(LogEntry){obs},
+		MaxBodyBytes: 0, // explicit zero == unlimited (also the zero-value default)
+	})
+
+	payload := strings.Repeat("x", 10000)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/cap-unlimited", strings.NewReader(payload)))
+
+	select {
+	case entry := <-ch:
+		if len(entry.Body) != len(payload) {
+			t.Errorf("expected uncapped body length %d, got %d", len(payload), len(entry.Body))
+		}
+		if len(entry.ResponseBody) != len(payload) {
+			t.Errorf("expected uncapped response body length %d, got %d", len(payload), len(entry.ResponseBody))
+		}
+	default:
+		t.Fatal("expected an observer call")
+	}
+}
+
+func TestTruncateRuneSafe(t *testing.T) {
+	cases := []struct {
+		name string
+		s    string
+		max  int
+		want string
+	}{
+		{"unlimited (max=0)", "hello", 0, "hello"},
+		{"negative max treated as unlimited", "hello", -1, "hello"},
+		{"already within limit", "hi", 10, "hi"},
+		{"exact fit", "hello", 5, "hello"},
+		{"ascii truncation", "hello world", 5, "hello"},
+		{"empty string", "", 5, ""},
+		{"multi-byte rune dropped at boundary", "café", 4, "caf"},
+		{"multi-byte rune fits exactly", "café", 5, "café"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := truncateRuneSafe(c.s, c.max)
+			if got != c.want {
+				t.Errorf("truncateRuneSafe(%q, %d) = %q, want %q", c.s, c.max, got, c.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateRuneSafe(%q, %d) = %q is not valid UTF-8", c.s, c.max, got)
+			}
+		})
 	}
 }

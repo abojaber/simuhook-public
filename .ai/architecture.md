@@ -12,6 +12,7 @@ Simuhook is a mock HTTP server written in Go. Users define endpoints as YAML fil
   - `--log-dir logs` — log directory (env `LOG_DIR`)
   - `--tui auto|on|off` — dashboard mode. `auto` (default): TUI on a TTY, line output otherwise.
   - `--recent N` (default 50) — recent-log ring buffer size (also the TUI feed depth)
+  - `--max-log-body N` (default 0 = unlimited, env `LOG_MAX_BODY`) — caps `body`/`response_body` length in `LogEntry` at capture time (rune-safe truncation); never affects the actual HTTP response bytes or echo/template rendering
   - `--help`, `--version` per CLI conventions
 
 ## Components

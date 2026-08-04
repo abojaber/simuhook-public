@@ -66,7 +66,8 @@ responses:               # optional: multiple response variants
   "response_body": "{\"status\":\"ok\"}"
 }
 ```
-> **WS-018 / UXR-013:** `response_headers` is always an object (never null); only headers Simuhock explicitly set via `w.Header().Set()` are captured (not Content-Length, Date, or sniffed Content-Type). `response_body` is the exact bytes sent, uncapped; for echo endpoints the request body appears here too (carried as the response). Both fields are additive — existing log consumers can ignore unknown keys.
+> **WS-018 / UXR-013:** `response_headers` is always an object (never null); only headers Simuhock explicitly set via `w.Header().Set()` are captured (not Content-Length, Date, or sniffed Content-Type). `response_body` is the exact bytes sent, uncapped by default; for echo endpoints the request body appears here too (carried as the response). Both fields are additive — existing log consumers can ignore unknown keys.
+> **`--max-log-body` / `LOG_MAX_BODY` (backlog: max-log-body-cap):** when set (> 0), `body` and `response_body` are truncated to at most N bytes at capture time, walking back to the nearest UTF-8 rune boundary (a split multi-byte rune is dropped rather than emitting invalid bytes). This is **capture-time-only** — it never affects the bytes written to the actual HTTP response, nor echo/template rendering, which always use the full, uncapped body. Default `0` = unlimited (current behavior, unchanged unless opted in).
 
 ---
 
@@ -79,11 +80,14 @@ Flags:
   --addr     string   Listen address (default ":8080")
   --stubs    string   Stubs directory path (default "../stubs")
   --log-dir  string   Log output directory (default "logs")
+  --max-log-body int  Cap stored request/response body size in bytes for logs
+                       and dashboard; 0 = unlimited (default 0)
 
 Environment variables (override defaults):
-  PORT       string   Listen port (e.g. "9090")
-  STUBS_DIR  string   Stubs directory path
-  LOG_DIR    string   Log output directory
+  PORT          string   Listen port (e.g. "9090")
+  STUBS_DIR     string   Stubs directory path
+  LOG_DIR       string   Log output directory
+  LOG_MAX_BODY  string   Same as --max-log-body (non-negative integer)
 
 Admin REST API (runtime endpoint management):
   GET    /_admin/endpoints          List all endpoints

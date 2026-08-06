@@ -1,6 +1,16 @@
 # WS-017b — Admin API extraction (`mock.NewAdminHandler`)
 
-**Status:** `verified` | **Owner:** BA | **Priority:** `[Could]` | **Date:** 2026-08-03 | **Contract:** existing `main.go:159-224` admin routes (behavior to preserve byte-for-byte)
+**Status:** `removed` | **Owner:** BA | **Priority:** `[Could]` | **Date:** 2026-08-03 | **Contract:** existing `main.go:159-224` admin routes (behavior to preserve byte-for-byte)
+
+> **REMOVED by stakeholder decision 2026-08-05.** The admin API was fully implemented
+> (`505e12c`) and QA-verified (16/16 ACs, no bugs), but the stakeholder decided to remove all
+> admin endpoints from the product ("all APIs can be handled manually in the stubs folder").
+> The feature moved to the backlog at low priority (consolidated as WS-014/ADM-001). This file
+> is retained in full as the **reintroduction contract** and the engineering record of what
+> shipped. See `04-backlog.md` for the removal decision and the reintroduction requirements
+> (input validation, watcher ownership, auth posture).
+>
+> **Removal tracking:** code deletion is a Developer task — see ADM-002 in `04-backlog.md`.
 
 > **Implemented `505e12c` — QA verified 2026-08-03 (16/16 ACs PASS, no bugs, wire format byte-for-byte).** Deferred from WS-017 (stakeholder approved deferral 2026-08-02) to keep WS-017 focused on the request-handling path. Now promoted to the next feature.
 >

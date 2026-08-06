@@ -1893,7 +1893,7 @@ func TestFilterChipClears(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, Config{}, 80, 30)
 	m.last = src.snap
 	m.showEndpoints = false
 	m.filter = Filter{Endpoint: "ping"}
@@ -2013,6 +2013,17 @@ func entriesWithIDs(n int) []mock.LogEntry {
 		}
 	}
 	return entries
+}
+
+// pinLocalZone swaps time.Local for a fixed zone and returns a restore
+// function. DASH-002 — dashboard timestamps are rendered via t.Local(), so
+// tests must pin an explicit zone instead of relying on the CI host TZ.
+// Not parallel-safe by design; no test in this package uses t.Parallel.
+func pinLocalZone(t *testing.T, name string, offset int) {
+	t.Helper()
+	old := time.Local
+	time.Local = time.FixedZone(name, offset)
+	t.Cleanup(func() { time.Local = old })
 }
 
 func TestModelExpandToggleEnter(t *testing.T) {
@@ -2521,12 +2532,12 @@ func TestFeedSelectedIdxBounds(t *testing.T) {
 
 func TestRenderDetailFields(t *testing.T) {
 	e := mock.LogEntry{
-		RequestID:      "abc-123",
-		Timestamp:      "2024-01-15T10:30:00.123456789Z",
-		Matched:        true,
-		Headers:        map[string]string{"Content-Type": "application/json"},
-		Query:          map[string]string{"page": "1"},
-		Body:           `{"key":"value"}`,
+		RequestID: "abc-123",
+		Timestamp: "2024-01-15T10:30:00.123456789Z",
+		Matched:   true,
+		Headers:   map[string]string{"Content-Type": "application/json"},
+		Query:     map[string]string{"page": "1"},
+		Body:      `{"key":"value"}`,
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
@@ -2582,7 +2593,7 @@ func TestRenderDetailSortedKeys(t *testing.T) {
 	e := mock.LogEntry{
 		RequestID: "req-0",
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		Headers:  map[string]string{"Z-Header": "z", "A-Header": "a", "M-Header": "m", "X-Header": "x"},
+		Headers:   map[string]string{"Z-Header": "z", "A-Header": "a", "M-Header": "m", "X-Header": "x"},
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
@@ -3171,7 +3182,7 @@ func TestLayoutWideEndpointsScrollIndependent(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	src := &fakeSource{snap: mock.StatsSnapshot{
-		HitCounts:     make(map[string]uint64),
+		HitCounts:       make(map[string]uint64),
 		EndpointLatency: make(map[string]mock.LatencyStats),
 		RecentLogs: []mock.LogEntry{
 			{Timestamp: now, Method: "GET", Path: "/test", ResponseStatus: 200, Webhook: "test", LatencyMs: 1.0},
@@ -3252,8 +3263,8 @@ func TestLayoutWideToggleLeftPanel(t *testing.T) {
 		RecentLogs: []mock.LogEntry{
 			{Timestamp: now, Method: "GET", Path: "/test", ResponseStatus: 200, Webhook: "test", LatencyMs: 1.0},
 		},
-		TotalLogs: 1,
-		HitCounts: map[string]uint64{"ping": 0},
+		TotalLogs:       1,
+		HitCounts:       map[string]uint64{"ping": 0},
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 0}},
 	}}
 
@@ -3367,11 +3378,11 @@ func TestLayoutWideKeyBindingsStillWork(t *testing.T) {
 		{Type: tea.KeyRunes, Runes: []rune{'f'}}, // prompt (alt)
 		{Type: tea.KeyRunes, Runes: []rune{'L'}}, // pause
 		{Type: tea.KeyRunes, Runes: []rune{'e'}}, // collapse
-		{Type: tea.KeyEscape},                     // clear
+		{Type: tea.KeyEscape},                    // clear
 		{Type: tea.KeyRunes, Runes: []rune{'c'}}, // clear
 		{Type: tea.KeyRunes, Runes: []rune{'r'}}, // refresh
 		{Type: tea.KeyRunes, Runes: []rune{'?'}}, // help
-		{Type: tea.KeyEnter},                      // expand (no-op on empty)
+		{Type: tea.KeyEnter},                     // expand (no-op on empty)
 		{Type: tea.KeyDown},
 		{Type: tea.KeyUp},
 		{Type: tea.KeyPgDown},
@@ -3401,8 +3412,8 @@ func TestLayoutFallbackLegacyStrings(t *testing.T) {
 		RecentLogs: []mock.LogEntry{
 			{Timestamp: now, Method: "GET", Path: "/ping", ResponseStatus: 200, Webhook: "ping", LatencyMs: 1.0},
 		},
-		TotalLogs:   1,
-		HitCounts:   map[string]uint64{"ping": 1},
+		TotalLogs:       1,
+		HitCounts:       map[string]uint64{"ping": 1},
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 1, P95: 1.5}},
 	}}
 	m := newModel(src, eps, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
@@ -3818,9 +3829,14 @@ func TestRenderStreamTableColumns(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(termenv.ANSI)
 
+	// DASH-002 — timestamps render via t.Local(), so pin an explicit
+	// non-UTC zone: the assertion proves Local()-converted output on any
+	// host (a reverted .Local() would fail here even on a UTC machine).
+	pinLocalZone(t, "UTC-3", -3*3600)
+
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	tm, _ := time.Parse(time.RFC3339Nano, now)
-	timeStr := tm.Format("15:04:05")
+	timeStr := tm.In(time.Local).Format("15:04:05")
 
 	src := &fakeSource{snap: mock.StatsSnapshot{
 		RecentLogs: []mock.LogEntry{
@@ -3862,6 +3878,33 @@ func TestRenderStreamTableColumns(t *testing.T) {
 	// Check that "ms)" doesn't appear after the status.
 	if strings.Contains(view, "ms)") {
 		t.Error("expected NO 'ms)' latency column in stream table")
+	}
+}
+
+func TestSummaryLineRendersLocalTime(t *testing.T) {
+	// DASH-002 — summaryLine (narrow layout) renders timestamps in the
+	// process-local zone. Pin a non-UTC zone: a reverted .Local() would fail
+	// here on any host, not just non-UTC CI machines.
+	pinLocalZone(t, "UTC-3", -3*3600)
+
+	e := mock.LogEntry{
+		Timestamp:      "2024-01-15T10:30:00Z", // UTC value → 07:30:00 in UTC-3
+		Method:         "POST",
+		Path:           "/test",
+		ResponseStatus: 200,
+		Webhook:        "test",
+		LatencyMs:      1.0,
+	}
+	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	row := m.summaryLine(e, false)
+
+	want, _ := time.Parse(time.RFC3339Nano, e.Timestamp)
+	wantStr := want.In(time.Local).Format("15:04:05")
+	if !strings.Contains(row, wantStr) {
+		t.Errorf("expected local time %q in summaryLine, got %q", wantStr, row)
+	}
+	if strings.Contains(row, "10:30:00") {
+		t.Error("summaryLine rendered UTC time instead of local time")
 	}
 }
 
@@ -4277,8 +4320,8 @@ func TestRenderFilterChipWide(t *testing.T) {
 		RecentLogs: []mock.LogEntry{
 			{Timestamp: now, Method: "GET", Path: "/test", ResponseStatus: 200, Webhook: "test", LatencyMs: 1.0},
 		},
-		TotalLogs: 1,
-		HitCounts: map[string]uint64{"ping": 0},
+		TotalLogs:       1,
+		HitCounts:       map[string]uint64{"ping": 0},
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 0}},
 	}}
 
@@ -4911,15 +4954,15 @@ func TestInspectLines_TinyViewport(t *testing.T) {
 
 func TestInspectLines_UnmatchedEntry(t *testing.T) {
 	e := mock.LogEntry{
-		RequestID:      "req-404",
-		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
-		Matched:        false,
-		Method:         "GET",
-		Path:           "/nonexistent",
-		ResponseStatus: 404,
-		LatencyMs:      1.0,
+		RequestID:       "req-404",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		Matched:         false,
+		Method:          "GET",
+		Path:            "/nonexistent",
+		ResponseStatus:  404,
+		LatencyMs:       1.0,
 		ResponseHeaders: map[string]string{"Content-Type": "application/json"},
-		ResponseBody:   `{"error":"no matching endpoint"}`,
+		ResponseBody:    `{"error":"no matching endpoint"}`,
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
@@ -5059,20 +5102,14 @@ func TestModelInspectSwitchRowEnter(t *testing.T) {
 	m.liveFollow = false
 	m.renderFeed()
 
-	// feedEntryToLine[3] gives the content line of entry 3's summary.
-	lineK := m.feedEntryToLine[3]
-	if lineK < 0 {
-		t.Fatal("entry 3 not found in feed")
-	}
-
-	// Directly set YOffset to bypass viewport clamping in SetYOffset.
-	// selectedIdx() reads YOffset directly, so this makes entry 3 the
-	// selected row without relying on scroll behavior.
-	m.view.YOffset = lineK
+	// UXR-014 — the feed fits this viewport (5 entries in a 40-row
+	// terminal), so selection is driven by the explicit sel index rather
+	// than YOffset (which is pinned to 0 when content fits).
+	m.sel = 3
 
 	sel := m.selectedIdx()
 	if sel != 3 {
-		t.Fatalf("expected selectedIdx=3, got %d (YOffset=%d)", sel, m.view.YOffset)
+		t.Fatalf("expected selectedIdx=3, got %d", sel)
 	}
 
 	// Now test: enter while inspecting entry 0 should expand entry 3, reset inspect.
@@ -5300,13 +5337,13 @@ func TestModelInspectWideLayout(t *testing.T) {
 
 func TestModelInspectTinyViewport(t *testing.T) {
 	e := mock.LogEntry{
-		RequestID: "req-0",
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		Method:    "POST",
-		Path:      "/test",
-		ResponseStatus: 200,
-		Webhook:   "test",
-		LatencyMs: 1.0,
+		RequestID:       "req-0",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		Method:          "POST",
+		Path:            "/test",
+		ResponseStatus:  200,
+		Webhook:         "test",
+		LatencyMs:       1.0,
 		ResponseHeaders: map[string]string{"X-A": "1"},
 		ResponseBody:    "ok",
 	}
@@ -5586,4 +5623,363 @@ func TestModelGotoTopBottom_NoCollisionWithPrompt(t *testing.T) {
 	if m3.prompt != "g" {
 		t.Errorf("expected 'g' typed into the prompt, got %q", m3.prompt)
 	}
+}
+
+// ------------------- UXR-014 fits-mode selection tests -------------------
+
+func TestModelFitsSelection_NavKeysMoveSelection(t *testing.T) {
+	// 5 entries in a 40-row viewport: content fits, so the viewport cannot
+	// scroll (YOffset is pinned to 0) and selection is driven by the
+	// explicit sel index moved with j/k.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+
+	j := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	k := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+
+	// j moves the selection down; the viewport never scrolls.
+	for want := 1; want <= 4; want++ {
+		updated, _ := m.Update(j)
+		m = updated.(Model)
+		if got := m.selectedIdx(); got != want {
+			t.Fatalf("after %d j: expected selectedIdx=%d, got %d", want, want, got)
+		}
+		if m.view.YOffset != 0 {
+			t.Fatalf("fits-mode j must not scroll the viewport, YOffset=%d", m.view.YOffset)
+		}
+	}
+
+	// j at the last entry clamps (no wrap, no panic).
+	updated, _ := m.Update(j)
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 4 {
+		t.Fatalf("expected clamp at last entry, got %d", got)
+	}
+
+	// The rendered feed highlights the selected row (buildFeed's sel path).
+	if !strings.Contains(m.buildFeed(m.selectedIdx()).content, "▍") {
+		t.Error("expected selection highlight marker in the rendered feed")
+	}
+	if strings.Contains(m.buildFeed(-1).content, "▍") {
+		t.Error("expected no selection marker when nothing is selected")
+	}
+
+	// k moves the selection back up.
+	for want := 3; want >= 0; want-- {
+		updated, _ = m.Update(k)
+		m = updated.(Model)
+		if got := m.selectedIdx(); got != want {
+			t.Fatalf("after k: expected selectedIdx=%d, got %d", want, got)
+		}
+	}
+
+	// k at the top clamps at 0.
+	updated, _ = m.Update(k)
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 0 {
+		t.Fatalf("expected clamp at first entry, got %d", got)
+	}
+}
+
+func TestModelFitsSelection_ArrowKeysMoveSelection(t *testing.T) {
+	// Up/Down arrow keys behave like k/j in fits mode.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 1 {
+		t.Fatalf("expected selectedIdx=1 after Down, got %d", got)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 0 {
+		t.Fatalf("expected selectedIdx=0 after Up, got %d", got)
+	}
+}
+
+func TestModelFitsSelection_GotoTopBottom(t *testing.T) {
+	// g/G in fits mode: g selects the first entry and pauses live-follow;
+	// G selects the last entry and resumes it.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+
+	m.sel = 2
+	m.liveFollow = true
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 0 {
+		t.Errorf("expected sel=0 after 'g', got %d", got)
+	}
+	if m.liveFollow {
+		t.Error("expected liveFollow=false after 'g'")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 4 {
+		t.Errorf("expected sel=4 after 'G', got %d", got)
+	}
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true after 'G'")
+	}
+}
+
+func TestModelFitsSelection_EnterExpandsSelected(t *testing.T) {
+	// UXR-014 AC5: enter expands the selected entry (not just the top line).
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+	m.sel = 3
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-3" {
+		t.Errorf("expected expandedID=req-3, got %q", m.expandedID)
+	}
+	if m.liveFollow {
+		t.Error("expected liveFollow=false while expanded")
+	}
+}
+
+func TestModelFitsSelection_SurvivesTickAndFilter(t *testing.T) {
+	// Distinct webhooks so a filter can reduce the displayed set.
+	entries := make([]mock.LogEntry, 5)
+	for i := range entries {
+		entries[i] = mock.LogEntry{
+			RequestID:      fmt.Sprintf("req-%d", i),
+			Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+			Method:         "POST",
+			Path:           "/test",
+			ResponseStatus: 200,
+			Webhook:        fmt.Sprintf("ep%d", i),
+			LatencyMs:      1.0,
+		}
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+	m.sel = 3
+
+	// A tick refresh re-renders; the in-range selection is preserved.
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	if got := m.selectedIdx(); got != 3 {
+		t.Fatalf("expected sel=3 after tick, got %d", got)
+	}
+
+	// Filtering to a subset clamps into range (no snap-to-0, no panic).
+	m.filter = Filter{Endpoint: "ep3"}
+	m.renderFeed()
+	if len(m.feedEntries) != 1 {
+		t.Fatalf("expected 1 filtered entry, got %d", len(m.feedEntries))
+	}
+	if got := m.selectedIdx(); got != 0 {
+		t.Fatalf("expected selection clamped to 0 after filter, got %d", got)
+	}
+
+	// Filtering to nothing is a safe -1 (no selected row).
+	m.filter = Filter{Endpoint: "missing"}
+	m.renderFeed()
+	if got := m.selectedIdx(); got != -1 {
+		t.Fatalf("expected -1 on empty filtered feed, got %d", got)
+	}
+	_ = m.View() // must not panic
+}
+
+func TestModelFitsSelection_NoSilentLiveFollowResume(t *testing.T) {
+	// UXR-014 Bug B (AC4): in fits mode AtBottom() is trivially true, so a
+	// key that cannot move the viewport must not silently resume live-follow.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+	m.liveFollow = false
+
+	// j moves the selection but must not resume live-follow.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.liveFollow {
+		t.Error("expected liveFollow to stay false after fits-mode j")
+	}
+
+	// An unhandled key forwarded to a non-scrollable viewport must not resume.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = updated.(Model)
+	if m.liveFollow {
+		t.Error("expected liveFollow to stay false after unhandled key in fits mode")
+	}
+}
+
+func TestModelOverflow_NoSilentLiveFollowResume(t *testing.T) {
+	// UXR-014 Bug B in overflow mode: parked at the bottom (scrolled down)
+	// with live-follow paused, a Down press cannot move further and must not
+	// resume live-follow. Scrolling up then back down to the bottom DOES.
+	entries := entriesWithIDs(60)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	if m.feedFits() {
+		t.Fatal("test requires overflow-mode feed")
+	}
+	m.view.GotoBottom()
+	m.liveFollow = false
+
+	// Down at the bottom: no movement, no resume.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.liveFollow {
+		t.Fatal("expected liveFollow to stay false (Down couldn't move the viewport)")
+	}
+
+	// Up moves away; Down back to the bottom resumes.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.liveFollow {
+		t.Fatal("expected liveFollow still false after scrolling up")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if !m.liveFollow {
+		t.Error("expected liveFollow=true after scrolling back down to the bottom")
+	}
+}
+
+// ------------------- DASH-004 standalone inspector tests -------------------
+
+func TestModelInspectStandaloneSelectedRow(t *testing.T) {
+	// DASH-004: 'i' opens the inspector on the selected row with no prior
+	// enter press. Fits mode: select a middle row, open, verify, dismiss.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+
+	m.sel = 3
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if !m.inspect {
+		t.Fatal("expected inspect=true after standalone 'i'")
+	}
+	if m.expandedID != "req-3" {
+		t.Errorf("expected expandedID=req-3, got %q", m.expandedID)
+	}
+	if m.liveFollow {
+		t.Error("expected liveFollow=false while inspecting")
+	}
+
+	// The request/response detail renders in the view.
+	view := m.View()
+	if !strings.Contains(view, "request:") || !strings.Contains(view, "RESPONSE") {
+		t.Error("expected request:/RESPONSE inspect detail in the view")
+	}
+
+	// Dismiss keeps the row expanded (expanded-inspect parity) and clears inspect.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect=false after dismiss")
+	}
+	if m.expandedID != "req-3" {
+		t.Errorf("expected expandedID preserved after dismiss, got %q", m.expandedID)
+	}
+}
+
+func TestModelInspectStandaloneOverflowRow(t *testing.T) {
+	// DASH-004 in overflow mode: 'i' inspects the row at the top visible line.
+	entries := entriesWithIDs(50)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	if m.feedFits() {
+		t.Fatal("test requires overflow-mode feed")
+	}
+
+	// Scroll up from the bottom so a known middle row is selected, then
+	// pause live-follow so dismiss exercises position-restore (not GotoBottom).
+	m.view.GotoBottom()
+	for i := 0; i < 10; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = updated.(Model)
+	}
+	m.liveFollow = false
+	selBefore := m.selectedIdx()
+	if selBefore < 0 {
+		t.Fatal("expected a selected row before opening inspect")
+	}
+	wantID := m.feedEntries[selBefore].RequestID
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if !m.inspect {
+		t.Fatal("expected inspect=true after standalone 'i'")
+	}
+	if m.expandedID != wantID {
+		t.Errorf("expected inspect on selected row %q, got expandedID=%q", wantID, m.expandedID)
+	}
+
+	// Dismiss restores position to the inspected row's summary line.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect=false after dismiss")
+	}
+	if m.expandedID == "" {
+		t.Fatal("expected expanded row preserved after dismiss")
+	}
+	if line := m.expandedSummaryLine(); line < 0 || m.view.YOffset != line {
+		t.Errorf("expected viewport pinned to the expanded row's line, YOffset=%d line=%d", m.view.YOffset, line)
+	}
+}
+
+func TestModelInspectStandaloneEmptyFeed(t *testing.T) {
+	// DASH-004 AC2: 'i' on an empty feed is a safe no-op.
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if m.inspect {
+		t.Error("expected inspect=false for an empty feed")
+	}
+	if m.expandedID != "" {
+		t.Errorf("expected expandedID empty, got %q", m.expandedID)
+	}
+	_ = m.View() // must not panic
 }

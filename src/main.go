@@ -170,8 +170,8 @@ func main() {
 
 	// Admin endpoints (control plane — not matched against stubs, not logged).
 	admin := mock.NewAdminHandler(registry)
-	mux.Handle(mock.AdminEndpointsPath, admin)      // collection
-	mux.Handle(mock.AdminEndpointsPath+"/", admin)  // item: /{id}
+	mux.Handle(mock.AdminEndpointsPath, admin)     // collection
+	mux.Handle(mock.AdminEndpointsPath+"/", admin) // item: /{id}
 
 	// Webhook handler — matched & unmatched requests are logged
 	observers := []func(mock.LogEntry){

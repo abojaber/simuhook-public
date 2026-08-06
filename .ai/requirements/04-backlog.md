@@ -82,7 +82,7 @@ Then  the view refreshes immediately
 **Design notes (Architect):**
 - New package `src/dashboard/` (`dashboard.go`, `model.go`, `render.go`, `filter.go` + tests). Dependency direction `main → dashboard → mock`
 - `StatsSource` interface (`Snapshot() mock.StatsSnapshot`) for testability
-- **Live updates: coalesced signal + pull.** `StatsTracker.Notify()` (non-blocking, coalescing) → pump goroutine → `Program.Send` rate-limited to 10 Hz → model re-reads `Snapshot()`. Rationale: bubbletea `Program.Send` is unbuffered and blocks (verified in source); this keeps render latency OFF the request path.
+- **Live updates: fixed 1s poll.** The model refreshes on a fixed 1 s `tea.Tick` (`refreshCmd(m.interval)`) — no pump goroutine, `Program.Send` never used for refresh. `StatsTracker.Notify()` (non-blocking, coalescing) exists but is not consumed by the dashboard; retained as a seam for a possible future push-based refresh. (Historical design note — the original "pump + 10 Hz `Program.Send`" idea was replaced at implementation; see architecture.md WS-010 ADR, corrected 2026-08-05 DASH-003.)
 - Startup: `net.Listen` first (fail fast before TUI), banner → primary buffer (altscreen swaps to alternate buffer, banner reappears on quit), `log.SetOutput(<log-dir>/server.log)` to stop watcher log spam corrupting the screen
 - Signals: **bubbletea owns SIGINT/SIGTERM** — main.go's `signal.Notify` is removed. `q`/Ctrl+C/SIGTERM all → `p.Run()` returns → `&http.Server{}.Shutdown(ctx)`. Requires replacing `http.ListenAndServe` with explicit server.
 - `--tui auto|on|off` (default auto): TTY→TUI; non-TTY→WS-016 line output (kept, no breaking change)
@@ -246,14 +246,35 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
 
 ---
 
-## WS-014 — REST API to manage config at runtime
+## WS-014 / ADM-001 — REST API to manage config at runtime (consolidated)
 
-**Status:** `draft` | **Priority:** `[Won't]`
+**Status:** `backlog` | **Priority:** `[Could]` (low)
 
 **User Story:**
-> As a developer, I want a REST API to CRUD webhook endpoints at runtime.
+> As a developer, I want a REST API to CRUD webhook endpoints at runtime so that I can manage
+> the mock surface without editing YAML files.
 
-*Rejected — stakeholder explicitly said CLI-only. Config is file-based.
+**History:**
+- Originally marked `[Won't]` ("stakeholder said CLI-only") — note was stale; the
+  `/_admin/endpoints` API **shipped** (WS-017b, `505e12c`, QA-verified 16/16 ACs).
+- **Removed from the product by stakeholder decision 2026-08-05**: all admin endpoints removed,
+  moved here at low priority. "All APIs can be handled manually in the stubs folder" — the YAML
+  hot-reload watcher already provides live create/edit/delete.
+- The removal also eliminates the admin-specific risks found during BA analysis (Gap A: no
+  input validation → unreachable/orphan endpoints; Gap B: watcher clobbering; Gap C:
+  unauthenticated CRUD surface; Gap D: base64 bodies; Gap E: PUT id-forcing surprise).
+
+**Reintroduction contract (if ever revived):** full wire spec in `07-admin-handler.md`
+(byte-for-byte, incl. preserved quirks). Any reintroduction MUST address, at minimum:
+1. Input validation — 400 on missing/blank `id` or `path` not starting with `/`
+   (Gap A — currently broken: POST with blank id creates an unremovable orphan).
+2. Ownership semantics vs. the file watcher — define admin-vs-YAML precedence (Gap B).
+3. ~~Auth/binding posture — unauthenticated CRUD on `--addr :8080` (Gap C).~~
+   **Resolved 2026-08-05 (stakeholder): no authentication required.** Simuhook is a dev-only
+   tool; `--addr :8080` binding is an accepted posture. Not a reintroduction requirement.
+
+**Dependencies for removal:** code deletion (admin.go, admin_test.go, mux mounts, banner line,
+dashboard admin URL lines + 2 dashboard tests) is a Developer task tracked as ADM-002.
 
 ---
 

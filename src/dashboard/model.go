@@ -19,21 +19,21 @@ type StatsSource interface {
 type tickMsg time.Time
 
 const (
-	wideMinWidth  = 100
-	wideMinHeight = 14
+	wideMinWidth    = 100
+	wideMinHeight   = 14
 	panelHeaderRows = 3 // title | column header | separator
-	leftFixed      = 29
-	streamFixed    = 36
-	minFlexCol     = 8
+	leftFixed       = 29
+	streamFixed     = 36
+	minFlexCol      = 8
 )
 
 // geometry holds all computed layout dimensions.
 type geom struct {
-	wide, showLeft                                       bool
-	leftTotal, leftContent, rightTotal, rightContent       int
-	panelTotal, panelContent                               int
-	viewportH, feedH, epsH                                 int
-	streamW, epW, pathW                                    int
+	wide, showLeft                                   bool
+	leftTotal, leftContent, rightTotal, rightContent int
+	panelTotal, panelContent                         int
+	viewportH, feedH, epsH                           int
+	streamW, epW, pathW                              int
 }
 
 // wide returns true when the terminal is wide enough for the two-column layout.
@@ -69,10 +69,10 @@ func (m Model) geometry() geom {
 	w := m.width
 	h := m.height
 
-	lt := w * 2 / 5          // left panel total width
-	rt := w - lt             // right panel total width
-	lc := lt - 2             // left content width (inside border)
-	rc := rt - 2             // right content width (inside border)
+	lt := w * 2 / 5 // left panel total width
+	rt := w - lt    // right panel total width
+	lc := lt - 2    // left content width (inside border)
+	rc := rt - 2    // right content width (inside border)
 
 	panelTotal := h - 4 - 1 // chrome (4) + footer (1)
 	if panelTotal < 9 {
@@ -100,20 +100,20 @@ func (m Model) geometry() geom {
 	_ = lc // epsW = leftContent — used by endpointsView.Width via applyGeometry
 
 	return geom{
-		wide:          m.wide(),
-		showLeft:      m.showEndpoints,
-		leftTotal:     lt,
-		leftContent:   lc,
-		rightTotal:    rt,
-		rightContent:  rc,
-		panelTotal:    panelTotal,
-		panelContent:  panelContent,
-		viewportH:     vpH,
-		feedH:         vpH,
-		epsH:          vpH,
-streamW:       streamW,
-		epW:           epW,
-		pathW:         pathW,
+		wide:         m.wide(),
+		showLeft:     m.showEndpoints,
+		leftTotal:    lt,
+		leftContent:  lc,
+		rightTotal:   rt,
+		rightContent: rc,
+		panelTotal:   panelTotal,
+		panelContent: panelContent,
+		viewportH:    vpH,
+		feedH:        vpH,
+		epsH:         vpH,
+		streamW:      streamW,
+		epW:          epW,
+		pathW:        pathW,
 	}
 }
 
@@ -152,17 +152,17 @@ func (m *Model) syncEndpoints() {
 
 // Model is the bubbletea model for the dashboard.
 type Model struct {
-	source    StatsSource
-	eps       EndpointSource
-	cfg       Config
-	last      mock.StatsSnapshot
-	endpoints []*mock.Endpoint
-	view      viewport.Model
+	source        StatsSource
+	eps           EndpointSource
+	cfg           Config
+	last          mock.StatsSnapshot
+	endpoints     []*mock.Endpoint
+	view          viewport.Model
 	endpointsView viewport.Model
-	height    int
-	width     int
-	lastErr   error
-	interval  time.Duration
+	height        int
+	width         int
+	lastErr       error
+	interval      time.Duration
 
 	// Filtering and prompt state.
 	filter    Filter
@@ -183,6 +183,8 @@ type Model struct {
 	feedEntries     []mock.LogEntry // displayed (filtered) entries backing current content
 	feedLineToEntry []int           // content line -> index into feedEntries, or -1
 	feedEntryToLine []int           // feedEntries index -> content line of its summary line
+	// UXR-014 — feed selection index when content fits viewport.
+	sel int // selected entry index into feedEntries
 
 	// WS-018 / UXR-013 — request/response inspector.
 	inspect       bool // inspect mode active (only when expandedID != "")
@@ -421,11 +423,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.syncEndpoints()
 		return m, nil
 
-	// WS-018 / UXR-013 — toggle request/response inspector.
+	// WS-018 / UXR-013 — toggle request/response inspector. DASH-004: the
+	// inspector opens standalone on the selected row when nothing is expanded
+	// (no prior enter press needed); when a row IS expanded the behavior is
+	// unchanged (inspect toggles on the expanded row).
 	case s == "i" && !m.prompting:
-		if m.expandedID == "" {
-			return m, nil
-		}
 		if m.inspect {
 			// Dismiss inspect: preserve position before clearing.
 			selBefore := m.selectedIdx()
@@ -441,7 +443,22 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		// Open inspect.
+		// Open inspect. If nothing is expanded, open standalone on the selected
+		// row by adopting its RequestID as expandedID — this reuses the whole
+		// expanded-inspect machinery (inline render, summary-line pinning,
+		// dismiss/live-follow semantics), so DASH-004 AC1/AC4/AC5 hold by
+		// construction. Empty feed or no selected row: safe no-op (AC2).
+		if m.expandedID == "" {
+			sel := m.selectedIdx()
+			if sel < 0 {
+				return m, nil
+			}
+			id := m.feedEntries[sel].RequestID
+			if id == "" {
+				return m, nil
+			}
+			m.expandedID = id
+		}
 		m.inspectFollow = m.liveFollow
 		m.inspect = true
 		m.liveFollow = false
@@ -470,13 +487,37 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// m.view.Update. Pure navigation — does NOT collapse an active row
 	// expansion, consistent with pgup/pgdn/arrow-key scrolling.
 	case s == "g" && !m.prompting:
-		m.view.GotoTop()
+		if m.feedFits() {
+			m.sel = 0
+		} else {
+			m.view.GotoTop()
+			m.sel = m.selectedIdxFromOffset()
+		}
 		m.liveFollow = false
 		return m, nil
 	case s == "G" && !m.prompting:
-		m.view.GotoBottom()
+		if m.feedFits() {
+			m.sel = clampSel(len(m.feedEntries)-1, len(m.feedEntries))
+		} else {
+			m.view.GotoBottom()
+			m.sel = m.selectedIdxFromOffset()
+		}
 		m.liveFollow = true
 		return m, nil
+
+	// UXR-014 — nav keys: in fits mode the viewport cannot scroll
+	// (maxYOffset=0) so j/k/↑/↓ move the explicit sel index; in overflow mode
+	// they fall through to the viewport below, which re-syncs sel.
+	case (s == "j" || s == "down") && !m.prompting:
+		if m.feedFits() {
+			m.sel = clampSel(m.sel+1, len(m.feedEntries))
+			return m, nil
+		}
+	case (s == "k" || s == "up") && !m.prompting:
+		if m.feedFits() {
+			m.sel = clampSel(m.sel-1, len(m.feedEntries))
+			return m, nil
+		}
 	}
 
 	// Prompt input mode: swallow all keys.
@@ -500,18 +541,61 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Non-prompt mode: forward unhandled keys to the viewport for scrolling.
 	var cmd tea.Cmd
+	before := m.view.YOffset
 	m.view, cmd = m.view.Update(msg)
-	// UXR-003 — resume live-follow when the user scrolls to the bottom.
-	if m.view.AtBottom() {
+	// UXR-014 — keep sel consistent with the scroll position in overflow mode
+	// (in fits mode the viewport cannot move, so sel is left untouched).
+	if !m.feedFits() {
+		m.sel = m.selectedIdxFromOffset()
+	}
+	// UXR-003 — resume live-follow only on genuine bottom-ward movement
+	// (UXR-014 Bug B fix): a key that cannot move the viewport (pinned,
+	// unbound, or fits-on-screen where AtBottom() is trivially true) must
+	// not silently resume live-follow.
+	if m.view.YOffset != before && m.view.AtBottom() {
 		m.liveFollow = true
 	}
 	return m, cmd
 }
 
-// selectedIdx returns the feedEntries index of the row at the top visible line.
-// Returns -1 when there is no valid entry at YOffset (blank line, placeholder,
-// bounds exceeded, or nil maps before first render).
+// feedFits reports whether the rendered feed content fits entirely within the
+// stream viewport (no scrolling possible). When it fits, the viewport's
+// YOffset is pinned to 0 and selection is driven by the explicit sel index
+// (UXR-014); when content overflows, selection derives from YOffset as before.
+func (m Model) feedFits() bool {
+	return len(m.feedLineToEntry) <= m.view.Height
+}
+
+// clampSel clamps sel into [0, n-1]; returns -1 when n == 0.
+func clampSel(sel, n int) int {
+	if n <= 0 {
+		return -1
+	}
+	if sel < 0 {
+		return 0
+	}
+	if sel >= n {
+		return n - 1
+	}
+	return sel
+}
+
+// selectedIdx returns the feedEntries index of the currently selected row.
+// When the feed fits the viewport (UXR-014) the selection is the explicit sel
+// index; when content overflows it is the row at the top visible line.
+// Returns -1 when there is no valid selection.
 func (m Model) selectedIdx() int {
+	if m.feedFits() {
+		return clampSel(m.sel, len(m.feedEntries))
+	}
+	return m.selectedIdxFromOffset()
+}
+
+// selectedIdxFromOffset returns the feedEntries index of the row at the top
+// visible line (overflow mode). Returns -1 when there is no valid entry at
+// YOffset (blank line, placeholder, bounds exceeded, or nil maps before
+// first render).
+func (m Model) selectedIdxFromOffset() int {
 	if m.feedLineToEntry == nil {
 		return -1
 	}
@@ -596,6 +680,14 @@ func (m *Model) renderFeed() {
 	if m.expandedID != "" && !fr.expandedHit {
 		m.expandedID = ""
 		m.inspect = false
+	}
+	// UXR-014 — keep sel consistent with the rendered state: overflow mode
+	// derives it from the scroll position; fits mode clamps it into range so
+	// the selection survives ticks and filters without snapping back to 0.
+	if m.feedFits() {
+		m.sel = clampSel(m.sel, len(m.feedEntries))
+	} else {
+		m.sel = m.selectedIdxFromOffset()
 	}
 }
 

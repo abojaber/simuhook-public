@@ -15,6 +15,10 @@
 | 5 | Persistence | Yes. Configurations stored as **YAML files**. Delivery logs stored in a `logs/` directory. |
 | 6 | Interface | **CLI first** with an admin REST API for runtime management (`/_admin/endpoints`). No web app. |
 
+> **Superseded 2026-08-05:** the admin REST API was removed from the product (stakeholder
+> decision — file-based YAML management + hot-reload covers runtime changes). Interface is now
+> **CLI only**. See `04-backlog.md` (WS-014/ADM-001).
+
 ---
 
 ## Inferred Constraints
@@ -34,7 +38,11 @@ A Go CLI tool that:
 3. Matches incoming requests by method, path, headers, query params, and payload.
 4. Returns configured responses with optional delay, echo mode, Go template rendering, and response variability (weighted random / round-robin).
 5. Logs every incoming request to `logs/` with full detail (headers, body, timestamp, latency, matched status).
-6. Exposes an admin REST API (`/_admin/endpoints`) for runtime CRUD on endpoints.
+6. Logs every incoming request to `logs/` with full detail (headers, body, timestamp, latency, matched status).
 7. Prints a boxed startup banner with server config and all loaded endpoints.
 8. Prints a one-liner per request showing timestamp, method, path, status, and matched endpoint.
 9. Maintains an in-memory ring buffer of the last 50 requests with per-endpoint hit counters.
+
+> **Note (2026-08-05):** item about the admin REST API (`/_admin/endpoints`) in the original
+> scope was **removed from the product** by stakeholder decision — endpoint management is
+> file-based (YAML + hot-reload) only.

@@ -90,13 +90,12 @@ Environment variables (override defaults):
   STUBS_DIR     string   Stubs directory path
   LOG_DIR       string   Log output directory
   LOG_MAX_BODY  string   Same as --max-log-body (non-negative integer)
+```
 
-Admin REST API (runtime endpoint management):
-  GET    /_admin/endpoints          List all endpoints
-  POST   /_admin/endpoints          Add an endpoint (JSON body)
-  GET    /_admin/endpoints/{id}     Get a specific endpoint
-  PUT    /_admin/endpoints/{id}     Update a specific endpoint
-  DELETE /_admin/endpoints/{id}     Remove a specific endpoint
+> **Admin REST API REMOVED (stakeholder decision 2026-08-05).** The `/_admin/endpoints` CRUD
+> routes no longer exist — endpoint management is file-based only (edit/create/delete YAML in
+> `STUBS_DIR`; the watcher hot-reloads). The full historical wire contract is preserved in
+> `07-admin-handler.md` as the reintroduction contract (backlog WS-014/ADM-001).
 
 ---
 

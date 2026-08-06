@@ -29,7 +29,6 @@ src/
 └── mock/
     ├── types.go          # Endpoint, Response structs
     ├── registry.go       # Store, match, CRUD endpoints (thread-safe)
-    ├── admin.go          # NewAdminHandler: REST admin API (/_admin/endpoints) (WS-017b)
     ├── handler.go        # Handler: single request-handling source of truth (WS-017)
     ├── stub.go           # YAML stub file parser
     ├── logger.go         # LogEntry, JSON Lines logging
@@ -48,15 +47,13 @@ Dependency direction: `main → dashboard → mock`. Nothing in `mock` imports `
 
 ## API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/_admin/endpoints` | List all endpoints |
-| POST | `/_admin/endpoints` | Create endpoint (JSON body) |
-| GET | `/_admin/endpoints/{id}` | Get one endpoint |
-| PUT | `/_admin/endpoints/{id}` | Update endpoint |
-| DELETE | `/_admin/endpoints/{id}` | Remove endpoint |
+The server exposes only the mock surface: requests are matched against stubs and answered with the configured response. Matched and unmatched requests are both logged.
 
-All other paths are the mock surface: requests are matched against stubs and answered with the configured response. Matched and unmatched requests are both logged.
+> **Admin REST API REMOVED (stakeholder decision 2026-08-05).** The former `/_admin/endpoints`
+> CRUD routes are gone — endpoint management is file-based only (edit/create/delete YAML in
+> `STUBS_DIR`; the watcher hot-reloads live). Historical wire contract and reintroduction
+> plan in `.ai/requirements/07-admin-handler.md` + backlog WS-014/ADM-001. Removal tracked as
+> ADM-002.
 
 ## Data Flow
 
@@ -72,7 +69,7 @@ All other paths are the mock surface: requests are matched against stubs and ans
 ### WS-010 — Interactive TUI dashboard (`[Could]`, done)
 - **Framework:** bubbletea v1.3.10 + lipgloss v1.1.0 + bubbles v1.0.0 (viewport only — no list/textinput). First external UI dependency; approved to override stdlib-first for UI only.
 - **`--tui auto|on|off`**: `auto` detects a TTY (`golang.org/x/term.IsTerminal`); non-TTY falls back to the WS-016 per-request line output. **No breaking change:** line output and startup banner remain when TUI is disabled; `--tui on` forces the TUI even on a non-TTY.
-- **Live updates — coalesced signal + pull:** `StatsTracker.Notify()` (buffered(1), non-blocking, coalescing) signals a pump goroutine which calls `Program.Send` at ≤10 Hz; the model re-reads `Snapshot()` on each tick. `Program.Send` is unbuffered and blocks, so it is NEVER called on the request path.
+- **Live updates — fixed 1s poll:** the dashboard refreshes on a fixed 1 s `tea.Tick` (`refreshCmd(m.interval)` with `interval: time.Second`): each `tickMsg` re-reads `Snapshot()` and re-renders. There is **no pump goroutine** and `Program.Send` is never used for refresh (corrected 2026-08-05, DASH-003 — the earlier "coalesced signal + pump at ≤10 Hz" description did not match the implementation). `StatsTracker.Notify()` (buffered(1), non-blocking, coalescing) remains defined but is **not consumed** by the dashboard; it is retained as a seam in case a push-based refresh is added later.
 - **StatsTracker latency:** exact `Count/Sum/Min/Max` accumulators over ALL requests plus a fixed 92-bucket logarithmic histogram (4 sub-buckets × 23 octaves, 0.01 ms → ~84 s) for an approximate p95 (interpolated, clamped to `[Min,Max]`). `LatencyStats.Avg()` is the single division and is guarded against `Count==0` (no NaN/div-zero).
 - **Signal ownership:** in TUI mode bubbletea owns SIGINT/SIGTERM (its `handleSignals` registers `signal.Notify(sig, SIGINT, SIGTERM)`; SIGINT → `InterruptMsg`, SIGTERM → `QuitMsg`). `main.go` therefore does NOT register `signal.Notify` in TUI mode. After `p.Run()` returns (q/Ctrl+C/SIGTERM), `srv.Shutdown(ctx)` drains with a 5 s timeout. Non-TUI mode keeps the explicit `signal.Notify` + `<-done` path.
 - **Log redirection:** when TUI is active, `log.SetOutput(<log-dir>/server.log)` so watcher/stub reload messages can't corrupt the alternate screen. Request logs still go to their own files via `logger.Log`.
@@ -95,7 +92,7 @@ All other paths are the mock surface: requests are matched against stubs and ans
 - **TUI log-dir fix:** `os.MkdirAll(*logDir)` before opening `server.log` in TUI mode (pre-existing WS-010b bug — `NewLogger` creates the dir lazily, so a fresh `--log-dir` crashed TUI startup).
 - **Coverage:** mock 74.4% → 81.4% (dead code removed, shipped path now covered for the first time); `go vet` clean (4 pre-existing findings lived in the deleted self-testing tests).
 
-### WS-017b — Single admin handler (`[Could]`, done)
+### WS-017b — Single admin handler (`[Could]`, **removed 2026-08-05**)
 - **Problem:** the admin REST API lived inline in `main.go:161-224` with zero unit tests — the same gap WS-017 closed for the request path.
 - **Decision:** extract to `mock.NewAdminHandler(registry *Registry) http.Handler` in `src/mock/admin.go`; `main.go` keeps only the two mounts (`mux.Handle(AdminEndpointsPath, admin)` + `mux.Handle(AdminEndpointsPath+"/", admin)`). Concrete type `adminHandler` unexported; **no config struct** (admin has no observers, no clock — contrast WS-017's `HandlerConfig`). Nil registry panics in the constructor (WS-017 convention). Exported `AdminEndpointsPath = "/_admin/endpoints"` removes the literal duplication between the mux mounts and the id-parsing `TrimPrefix`.
 - **One handler, two mounts:** the handler distinguishes collection from item with `r.URL.Path == AdminEndpointsPath`. Rejected an internal `ServeMux` (double routing, inherits mux path-cleaning/redirect semantics, prefix-bound 404s) and split constructors (double API surface) — there are exactly two routes.
@@ -105,6 +102,7 @@ All other paths are the mock surface: requests are matched against stubs and ans
 - **`registry.Update` sets `ep.ID = id`,** so a `PUT` response reports the **path** id and no second map key is created; `PUT` is a full replace (absent fields become zero; `rrIndex` resets). Load-bearing coupling — documented in `admin.go`.
 - **Race fix (byte-identical):** POST/PUT now `Encode(&ep)` instead of `Encode(ep)`. The value copy read the unexported `rrIndex` non-atomically while `PickResponse` atomically incremented it through the registry's pointer — reproducible `-race` warning. Pointer-encode produces identical JSON and matches GET-list/GET-one.
 - **Known quirks preserved (not fixed):** `created_at` is client-supplied/zero on POST (only the YAML loader stamps `time.Now()`); `List()` order is map-iteration order; `[]byte` fields (`payload`, `response.body`) are base64 on the wire; no `Allow` header on 405; the admin API is unauthenticated (standing risk — `ep.Path`/`ep.ID` sanitized in the TUI because of it).
+- **⚠️ REMOVED 2026-08-05 (stakeholder decision).** All admin endpoints deleted from the product — endpoint management is file-based only. Historical spec retained as the reintroduction contract (`.ai/requirements/07-admin-handler.md`; backlog WS-014/ADM-001). Deletion task: ADM-002. The ADR above is retained for the record.
 
 ### Stubs and matching
 - YAML stubs support: method, path, query match, header match, payload match, response status/body/headers, `delay`, `echo`, `template` modes, and multiple response variants with weights (round-robin on equal weight).
@@ -119,7 +117,6 @@ All other paths are the mock surface: requests are matched against stubs and ans
 
 ### Deliverables
 - Runnable Go binary: `simuhook`
-- REST admin API for CRUD on endpoints
 - Live TUI dashboard with counts, latency stats, filterable recent-log feed
 - JSON Lines delivery log with status, latency, headers, body, query
 

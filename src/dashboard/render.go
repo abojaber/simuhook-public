@@ -15,15 +15,15 @@ import (
 
 // Package-level lipgloss styles.
 var (
-	styleHeader    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	styleMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	styleAccent    = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	stylePauseBtn  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleResumeBtn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220"))
-	styleTableHead = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
+	styleHeader     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
+	styleMuted      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleAccent     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	styleError      = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	stylePauseBtn   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleResumeBtn  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220"))
+	styleTableHead  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
 	stylePanelTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	panelStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
+	panelStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
 
 	// UXR-008 — feed row expansion styles.
 	styleSelBG     = lipgloss.NewStyle().Background(lipgloss.Color("236"))
@@ -392,7 +392,7 @@ func (m Model) streamRow(e mock.LogEntry, sel bool) string {
 	t, err := time.Parse(time.RFC3339Nano, e.Timestamp)
 	timeStr := "??:??:??"
 	if err == nil {
-		timeStr = t.Format("15:04:05")
+		timeStr = t.Local().Format("15:04:05")
 	}
 
 	method := padRight(truncPlain(sanitize(e.Method), 6), 6)
@@ -588,7 +588,7 @@ func (m Model) summaryLine(e mock.LogEntry, sel bool) string {
 	t, err := time.Parse(time.RFC3339Nano, e.Timestamp)
 	timeStr := "??:??:??"
 	if err == nil {
-		timeStr = t.Format("15:04:05")
+		timeStr = t.Local().Format("15:04:05")
 	}
 
 	label := sanitize(e.Webhook)
@@ -867,7 +867,7 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 	// --- RESPONSE section ---
 
 	// Build RESPONSE section header with status tint (segment-wise).
-	respHead := styleSection.Render(gutter + fmt.Sprintf("%-12s", "RESPONSE")) + tint(e.ResponseStatus)
+	respHead := styleSection.Render(gutter+fmt.Sprintf("%-12s", "RESPONSE")) + tint(e.ResponseStatus)
 	if lipgloss.Width(respHead) > m.view.Width {
 		// Degraded: width overflow, render untinted.
 		respHead = styleMuted.Render(gutter + fmt.Sprintf("%-12s %d", "RESPONSE", e.ResponseStatus))

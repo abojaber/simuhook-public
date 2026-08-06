@@ -2,6 +2,63 @@
 
 ## Current Session
 
+### 2026-08-06 — DASH-001 gap closures D1/D2/D4/D7 implemented + verified
+
+- **All four code closures from the 2026-08-05 sign-off landed and passed QA (0 bugs).**
+  Committed `4d3c0d1`.
+  - **UXR-014 (D1): feed selection stuck on first entry when content fits.** Explicit `sel`
+    index for the fits-on-screen case (`feedFits()`, `clampSel()`, `selectedIdx()` split into
+    fits→`sel` / overflow→`selectedIdxFromOffset()`), `j/k/↑/↓` move `sel` in fits mode,
+    `g`/`G` set `sel=0`/`sel=last` (+ pause/resume), `renderFeed()` re-syncs `sel` after every
+    rebuild. **Bug B fixed (AC4):** live-follow resumes only on `YOffset != before &&
+    AtBottom()`. Overflow path byte-identical (pre-existing tests untouched, gofmt-only).
+  - **DASH-002 (D2): feed timestamps local time.** `t.Local()` in `streamRow` +
+    `summaryLine` (render.go:395/591), matching WS-016 line output; PTY cross-checked with
+    TZ=America/New_York (TUI clock == line-output clock). New `pinLocalZone` helper.
+  - **DASH-004 (D4): standalone `i` inspector.** Guard dropped; `i` adopts the selected row's
+    RequestID as `expandedID`, reusing the full expanded-inspect machinery; empty feed =
+    safe no-op.
+  - **DASH-007 (D7): gofmt pass** on 5 flagged files (`gofmt -l src/` empty; main.go/admin.go
+    diffs format-only).
+- **QA:** 319/319 tests (dashboard 193, mock 126), `-race` clean ×3, `go vet` clean,
+  `go build` OK, PTY-verified wide + narrow. No bugs. Non-blocking coverage gaps flagged:
+  DASH-002 AC3 (TZ=UTC) and AC4 (parse-failure fallback) lack dedicated unit tests.
+- **Process note:** the Developer subagent returned an empty result on first invocation
+  (same tooling failure the Architect hit during the D1 design phase); a single retry
+  completed all four stories cleanly.
+- Stories marked `verified` in `09-feed-selection-bug.md` and `12-dashboard-gap-closures.md`.
+
+### 2026-08-05 — Admin API removed + DASH-001 gap analysis signed off
+
+- **Admin REST API removed from the product (stakeholder decision, ADM-002).** Endpoint
+  management is file-based only (YAML + hot-reload watcher). Requirements/docs updated
+  (`01-discovery`, `04-backlog`, `07-admin-handler`, `10-admin-and-dashboard-features`,
+  `11-admin-removal`, `contracts`, `architecture`). **Code deletion still pending.**
+- **DASH-001 (TUI dashboard) gap analysis — all 7 decisions agreed:**
+  - D1 UXR-014 selection bug → fix now; D2 timestamps → local time; D3 Notify() doc drift →
+    correct docs; D4 `i` standalone; D5 max-log-body doc note; D6 observer panic policy →
+    backlog; D7 gofmt drift → pass.
+  - BA executed D3 (`architecture.md` WS-010 ADR + `04-backlog.md` design note now state
+    "fixed 1s poll", no pump) and D5 (DASH-001 doc note) same day; D6 backlog item created
+    (`.ai/backlog/observer-panic-policy.md`).
+- **Agent models switched** to `opencode/deepseek-v4-flash-free` for all four agents
+  (opencode.json).
+
+### 2026-08-04 — WS-018 backlog items closed
+
+- **Four pre-existing backlog items implemented + verified** (full suite + race + vet clean,
+  `-race` clean):
+  - `detaillines-header-cap` — UXR-008 `enter` expansion headers/query capped at
+    `maxRenderedHeaders` (30) with `(N more ...)` marker lines (byte-identical below cap).
+  - `max-log-body-cap` — new `--max-log-body` / `LOG_MAX_BODY` capture cap (default 0 =
+    unlimited), rune-safe truncation at capture time, never affects wire response.
+  - `response-variant-index` — `PickResponse` returns the 0-based variant index;
+    `LogEntry.ResponseVariant *int` surfaces it in logs + inspector.
+  - `viewport-g-g-bindings` — `g`/`G` were never bound in bubbles v1.0.0's `DefaultKeyMap`;
+    implemented as explicit `KeyMsg` handling (g → top + pause, G → bottom + resume).
+    Two architecture.md doc bugs fixed along the way.
+- `.ai/backlog/` empty again after these closed.
+
 ### 2026-08-03 — UX Phase 6: two-column dashboard redesign (UXR-009/010/011)
 
 - **Implemented and verified.** At width ≥ 100 × height ≥ 14 the dashboard renders the redesigned layout: title row with `[ Pause Stream ]` button, SERVER INFO chips, muted log-dir/admin line, METRICS chips, and two `RoundedBorder` panels at fixed 40/60 — left REGISTERED ENDPOINTS table (Method|Endpoint|Stub|Req|p95, own scrollable viewport via shift+↑/↓/K/J), right LIVE REQUEST STREAM table (Time|Method|Path|Stub|Status). Below the threshold it falls back byte-identical to the legacy vertical layout. `e` hides the left panel. UXR-008 enter-expansion, UXR-007 chip relocation, UXR-002 Req data, UXR-010 pause all preserved. `ep.Path`/`ep.ID` now also sanitized (unauthenticated admin API = injection vector).

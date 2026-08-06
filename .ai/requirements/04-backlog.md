@@ -6,7 +6,13 @@
 
 ## WS-010 — Interactive TUI dashboard
 
-**Status:** `ready` | **Priority:** `[Could]`
+**Status:** `done` | **Priority:** `[Could]` | **Implemented:** `WS-010a/b/c` + `UXR-001..014` (UX phases 1-7) | **QA:** verified per sub-story
+
+> The dashboard shipped in full — sub-stories `WS-010a/b/c` (stats latency, bubbletea TUI,
+> filtering/scroll) plus the UXR phases (tinting, per-endpoint stats, feed row expansion,
+> two-column redesign, prompt polish, inspector, selection fix). See `10-admin-and-dashboard-
+> features.md` (DASH-001), `05-ux-vnext.md`, `06-dashboard-redesign.md`, and
+> `12-dashboard-gap-closures.md`. This backlog entry is retained for the historical record.
 
 **User Story:**
 > As a developer, I want an interactive terminal dashboard showing live request counts, response times, and recent logs so that I can monitor the simulator in real time during demos.
@@ -166,6 +172,8 @@ Then  all recent entries are shown again
 
 - `mock.NewAdminHandler(registry) http.Handler` extraction from `main.go:159-222` + tests (GET/POST/PUT/DELETE, 400/404/405). *Stakeholder approved deferral 2026-08-02.*
 - `logger.Log` dropped-error reporting; observer panic policy; latency-includes-delay goroutine resource risk.
+  - **Observer panic policy → tracked as DASH-006** (`.ai/backlog/observer-panic-policy.md`,
+    created 2026-08-05, DASH-001 gap analysis decision D6).
 
 ### Test plan (~24 tests, all vs. the shipped handler)
 
@@ -274,7 +282,9 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
    tool; `--addr :8080` binding is an accepted posture. Not a reintroduction requirement.
 
 **Dependencies for removal:** code deletion (admin.go, admin_test.go, mux mounts, banner line,
-dashboard admin URL lines + 2 dashboard tests) is a Developer task tracked as ADM-002.
+dashboard admin URL lines + 2 dashboard tests) is a Developer task tracked as **ADM-002** —
+decision made 2026-08-05, **code deletion still pending** in the working tree (as of 2026-08-06;
+docs already updated).
 
 ---
 

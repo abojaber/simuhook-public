@@ -2,6 +2,69 @@
 
 ## Current Session
 
+### 2026-08-07 — Detail coloring, response section, visual separation (UXR-015/016/017) + v0.1.0 release prep
+
+- **UXR-015 — colorized request detail (`[Should]`, verified).** `detailLines` (enter
+  expansion) and `inspectLines` (i inspector) were uniformly muted gray. Now labels are
+  cyan-bold, header/query keys cyan, values default, request bodies yellow 220, response
+  bodies green 76, and JSON payloads are syntax-highlighted (keys cyan 39, strings default,
+  numbers yellow 220, booleans/null magenta 213, punctuation muted 240). New pure helpers in
+  `src/dashboard/render_detail.go`: `highlightJSON` (character-scanner tokenizer — NOT
+  regex, RE2 lacks lookahead for key-vs-value), `splitKV` (first-colon split preserving
+  %-14s alignment), `isJSONBody` (mirrors `formatBody`'s JSON path exactly), shared
+  `renderStyledLine` assembler. Stakeholder decisions: (1) NEW cyan-bold `REQUEST` section
+  header in the inspector; (2) inspector request body routed through `formatBody`
+  (multi-line, was a single blob); (3) label column `%-12s` → `%-14s`; (4) truncated JSON
+  lines render unstyled (documented). QA 16/16 ACs.
+- **UXR-016 — response section in the `enter` expansion (`[Should]`, verified).** The
+  `enter` row detail showed request only; status/response headers/body required `i`. Now
+  `detailLines` appends a RESPONSE section after `request body:` built byte-for-byte
+  identical to the inspector's block: pre-styled `styleSection` bold-240 + `tint(status)`
+  header (gutter inside style, width-degradation to muted `RESPONSE <code>`, the pre-existing
+  styled-string truncation exception — now two call sites), optional `variant: N`,
+  response headers capped at `maxRenderedHeaders` with a muted `(N more headers)` marker,
+  multi-line response body via `appendBodyBlock` (JSON highlighted or plain green).
+  Request-side lines byte-identical (AC10). No-refactor decision: RESPONSE block explicitly
+  duplicated between `detailLines`/`inspectLines`; parity locked by tests. Unmatched → `RESPONSE
+  404` + placeholders. QA 11/11 ACs.
+- **UXR-017 — request/response visual separation (`[Should]`, verified).** Both detail
+  surfaces were one gray wall. Now: (1) muted full-width `─` separator closes the request
+  section; (2) full-width background bands — REQUEST dark gray `236` (selection-band
+  family), RESPONSE dark navy `17` (stakeholder color amendment 2026-08-07, replaced
+  original dark green `22` to avoid green-on-green with the green-76 text and to give a
+  distinct hue); (3) response keys magenta `213` (`kindKVResp` + `styleKeyResp`;
+  `highlightJSON` gains a `keyStyle` param → `styleJSONKeyResp`). Core mechanism: `band()`
+  — a reset-safe post-pass re-asserting `\x1b[48;5;<bg>m` after every `\x1b[0m` and
+  padding with background-active spaces to `m.view.Width`. A naive `Background().Render()`
+  would lose the band at the first inner reset (UXR-008 segment-wise lesson); the ANSI
+  surgery is safe because `sanitize()` strips every user ESC before styling. Selection
+  band/feed rows byte-identical (AC6). QA 11/11 ACs.
+- **QA totals:** 358 tests (dashboard 234, mock 124), `-race` clean, `go vet` + `gofmt`
+  clean, no defects across all three stories.
+- **Release prep (v0.1.0):**
+  - **`--version` flag added** (`src/main.go`): `var version = "dev"`, injected via
+    `-ldflags "-X main.version=v0.1.0"`. Verified both dev (`simuhook dev`) and release
+    (`simuhook v0.1.0`) builds. Closes the long-standing CLI-convention gap
+    ("Support `--help` and `--version` on every command").
+  - **README rewritten:** admin API section removed (ADM-002/ADM-003 follow-through),
+    CLI flags documented, architecture tree updated to current layout (dashboard/
+    render_detail.go, mock/handler.go, no server.go/admin.go), log sample updated with
+    response fields.
+  - **Committed `4c42c19`** (11 files, +2468/−144): the UXR-015/016/017 batch + version +
+    README + docs (ADRs, TUI reference, requirements `14/15/16`).
+  - **Tagged `v0.1.0`** and pushed to origin (commit + tag).
+  - **Release binaries built** in `dist/` (all `-X main.version=v0.1.0`):
+    `simuhook-darwin-arm64/amd64`, `simuhook-linux-arm64/amd64` + `CHECKSUMS.txt` +
+    `RELEASE_NOTES.md`.
+  - **⏳ Blocked: GitHub release creation** — `gh` installed via brew but unauthenticated
+    (no token). One command remains: `gh auth login` then
+    `gh release create v0.1.0 --title "Simuhook v0.1.0" --notes-file dist/RELEASE_NOTES.md dist/simuhook-* dist/CHECKSUMS.txt`.
+  - `curls_manual_test.sh` remains untracked at repo root (manual-test artifact, QA
+    flagged — do not commit).
+- **Process notes:** the Developer subagent returned an empty result on the first UXR-015
+  invocation (same tooling failure seen 2026-08-06); one resume completed it cleanly.
+  QA's UXR-016 pass confirmed the 4 predicted test breaks and found 0 defects.
+
 ### 2026-08-07 — Admin API fully removed (ADM-002/ADM-003) + TUI reference doc
 
 - **ADM-002 executed — admin code deleted from the tree.** `src/mock/admin.go` +

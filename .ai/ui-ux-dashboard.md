@@ -2,6 +2,11 @@
 
 **Status:** `draft` | **Owner:** BA (AboJaber) | **Related:** WS-010 (implemented), this doc is the v-next UX contract
 
+> ⚠️ **This is the v-next (aspirational) UX contract.** For what the dashboard *actually is
+> today* — the code-verified, shipped layout/keys/states — read
+> `.ai/tui-dashboard-reference.md` (developer reference). Where this draft conflicts with
+> the reference, the reference wins.
+
 ---
 
 ## 1. Goals

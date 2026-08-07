@@ -284,7 +284,8 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
 **Dependencies for removal:** code deletion (admin.go, admin_test.go, mux mounts, banner line,
 dashboard admin URL lines + 2 dashboard tests) is a Developer task tracked as **ADM-002** —
 decision made 2026-08-05, **code deletion still pending** in the working tree (as of 2026-08-06;
-docs already updated).
+docs already updated). The stale admin URL strings are reported separately as **ADM-003**
+(`.ai/requirements/13-admin-url-residue.md`, severity Low) and are fixed as part of ADM-002.
 
 ---
 

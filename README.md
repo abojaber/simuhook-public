@@ -10,6 +10,32 @@ cd src && go run .
 
 Starts on `:8080` (override with `--addr` or `PORT`). Watches `../stubs/` (override with `--stubs` or `STUBS_DIR`). Logs every request to `logs/` (override with `--log-dir` or `LOG_DIR`).
 
+## CLI
+
+```
+simuhook [flags]
+
+  --addr :8080          listen address (env PORT)
+  --stubs ../stubs      stubs directory (env STUBS_DIR)
+  --log-dir logs        log directory (env LOG_DIR)
+  --tui auto|on|off     dashboard mode: auto = TUI on a TTY, line output otherwise
+  --recent N            recent-log ring buffer size (default 50; also the TUI feed depth)
+  --max-log-body N      cap stored request/response body size in bytes for logs and
+                        dashboard (default 0 = unlimited; env LOG_MAX_BODY). Never affects
+                        the actual HTTP response bytes.
+  --help                print usage and exit
+  --version             print version and exit
+```
+
+The TUI dashboard shows live request counts, latency stats (incl. an approximate p95), and a filterable recent-request feed. Press `?` in the TUI for the key reference. `enter` on a feed row expands the full request/response detail; `i` opens the standalone inspector.
+
+## Build
+
+```bash
+go build -o simuhook ./src                    # dev build (--version prints "dev")
+go build -ldflags "-X main.version=v0.1.0" -o simuhook ./src   # release build
+```
+
 ## Stub Files (YAML)
 
 Place `.yaml` / `.yml` files in the `stubs/` directory. Each file defines one endpoint. Files are loaded at startup and hot-reloaded on change. See [`stubs/README.md`](stubs/README.md) for a full reference and usage examples.
@@ -67,32 +93,21 @@ Every request to a webhook endpoint is logged as a JSON line to `logs/<webhook-i
   "body": "",
   "query": {},
   "response_status": 200,
+  "response_headers": {"Content-Type": "application/json"},
+  "response_body": "",
   "latency_ms": 0.02,
   "matched": true
 }
 ```
 
-The log directory defaults to `logs/` — override with `--log-dir` or `LOG_DIR` env var.
+The log directory defaults to `logs/` — override with `--log-dir` or `LOG_DIR` env var. Unmatched requests are logged with `matched: false` and a `404` response status.
 
-## Admin API
+## Endpoint Management
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/_admin/endpoints` | List all endpoints |
-| `POST` | `/_admin/endpoints` | Create endpoint (JSON body) |
-| `GET` | `/_admin/endpoints/{id}` | Get one endpoint |
-| `PUT` | `/_admin/endpoints/{id}` | Update endpoint |
-| `DELETE` | `/_admin/endpoints/{id}` | Remove endpoint |
+Endpoints are managed entirely through YAML stub files in the stubs directory — create, edit, or delete a file and the watcher hot-reloads it live (no restart, no API). Endpoint matching supports method, exact path, query, headers, payload, and response variants with weights (round-robin on equal weight).
 
 ```bash
-# create via API (id must be unique, not conflicting with stub files)
-curl -X POST http://localhost:8080/_admin/endpoints \
-  -H "Content-Type: application/json" \
-  -d '{"id":"my-endpoint","method":"GET","path":"/my-endpoint","response":{"status_code":200,"body":"bXkgZW5kcG9pbnQ="}}'
-
-# call the mock endpoint
 curl http://localhost:8080/ping                     # → 200 (from ping.yaml stub)
-curl http://localhost:8080/my-endpoint              # → 200 my-endpoint (from API)
 curl -X POST http://localhost:8080/ping            # → 404 (method mismatch)
 ```
 
@@ -100,20 +115,29 @@ curl -X POST http://localhost:8080/ping            # → 404 (method mismatch)
 
 ```
 src/
-├── main.go
+├── main.go               # Entry point: flags, --version, HTTP server, graceful shutdown
+├── dashboard/            # bubbletea TUI dashboard
+│   ├── dashboard.go      # Run() — program entry (alternate screen)
+│   ├── model.go          # tea.Model, StatsSource, tick/prompt/key handling
+│   ├── render.go         # feed/summary/detail rendering (segment-wise styling)
+│   ├── render_detail.go  # pure helpers: band(), highlightJSON, renderStyledLine
+│   ├── filter.go         # Filter, ParseFilter, Matches (pure)
+│   └── *_test.go
 └── mock/
-    ├── types.go      # Endpoint, Response structs
-    ├── registry.go   # Store, match, CRUD endpoints
-    ├── server.go     # HTTP handler
-    ├── stub.go       # YAML stub file parser
-    ├── logger.go     # Request logging (JSON Lines)
-    └── watcher.go    # File watcher (hot-reload)
+    ├── types.go          # Endpoint, Response structs
+    ├── registry.go       # Store, match, CRUD endpoints (thread-safe)
+    ├── handler.go        # Single request-handling source of truth
+    ├── stub.go           # YAML stub file parser
+    ├── logger.go         # LogEntry, JSON Lines logging
+    ├── stats.go          # StatsTracker: counts, ring, latency stats
+    ├── templating.go     # Body/header template execution
+    └── watcher.go        # File watcher (hot-reload)
 
-stubs/
+stubs/                    # YAML stub definitions (hot-reloaded)
 ├── health.yaml
 ├── order-placed.yaml
 ├── ping.yaml
-└── user-create.yaml
+└── ...
 ```
 
 ## Testing

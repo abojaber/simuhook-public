@@ -2443,22 +2443,22 @@ func TestFeedLineToEntryMappingExpanded(t *testing.T) {
 	m.expandedID = "req-0"
 	m.renderFeed()
 
-	// Entry 0 summary line + 9 detail lines = 10 lines for entry 0.
+	// Entry 0 summary line + 13 detail lines = 14 lines for entry 0.
 	// Entry 1 summary line = 1 line.
-	// Total: 11 + trailing -1 = 12
+	// Total: 15 + trailing -1 = 16
 	detailCount := len(m.detailLines(e))
-	if detailCount != 9 {
-		t.Fatalf("expected 9 detail lines (6 fixed + 2 header lines + 1 query line), got %d", detailCount)
+	if detailCount != 13 {
+		t.Fatalf("expected 13 detail lines (9 request + UXR-017 separator + RESPONSE header + headers (none) + response body (empty)), got %d", detailCount)
 	}
 	// entryToLine[0] = 0 (summary)
-	// entryToLine[1] = 10 (after entry 0's summary + 9 detail lines + 1 summary)
+	// entryToLine[1] = 13 (after entry 0's summary + 12 detail lines + 1 summary)
 	if m.feedEntryToLine[1] != 1+detailCount {
 		t.Errorf("entryToLine[1]=%d, want %d", m.feedEntryToLine[1], 1+detailCount)
 	}
 	if len(m.feedLineToEntry) != m.view.TotalLineCount() {
 		t.Errorf("len(lineToEntry)=%d, TotalLineCount=%d", len(m.feedLineToEntry), m.view.TotalLineCount())
 	}
-	// First 10 content lines should all map to index 0.
+	// First 13 content lines should all map to index 0.
 	for i := 0; i <= detailCount; i++ {
 		if m.feedLineToEntry[i] != 0 {
 			t.Errorf("lineToEntry[%d]=%d, want 0", i, m.feedLineToEntry[i])
@@ -2544,14 +2544,16 @@ func TestRenderDetailFields(t *testing.T) {
 	m.expandedID = "abc-123"
 	m.renderFeed()
 
-	view := m.View()
+	// UXR-015 — lines are now segment-wise colored; strip ANSI before the
+	// content assertions.
+	view := stripANSI(m.View())
 	for _, want := range []string{
 		"request_id:", "abc-123",
 		"matched:", "true",
 		"timestamp:", "2024-01-15T10:30:00.123456789Z",
 		"Content-Type: application/json",
 		"page: 1",
-		`{"key":"value"}`,
+		"request body:", `{"key":"value"}`,
 		"│",
 	} {
 		if !strings.Contains(view, want) {
@@ -2580,10 +2582,13 @@ func TestRenderDetailEmptyMaps(t *testing.T) {
 		t.Error("expected '(empty)' for empty body")
 	}
 
-	// Detail for nil maps should have exactly 6 lines.
+	// Detail for nil maps should have exactly 10 lines: 6 request lines
+	// (request_id, matched, timestamp, headers (none), query (none), request
+	// body (empty)) + UXR-017 separator + RESPONSE section header + response
+	// headers (none) + response body (empty) (UXR-016/UXR-017).
 	lines := m.detailLines(e)
-	if len(lines) != 6 {
-		t.Errorf("expected 6 detail lines, got %d: %v", len(lines), lines)
+	if len(lines) != 10 {
+		t.Errorf("expected 10 detail lines, got %d: %v", len(lines), lines)
 	}
 }
 
@@ -2650,9 +2655,10 @@ func TestRenderDetailSanitizesBody(t *testing.T) {
 	if strings.Contains(view, "\x1b[2J") {
 		t.Error("ESC sequence should not appear in rendered view")
 	}
-	// Body must be on a single line (no \n in view).
-	if strings.Count(view, "body:") > 1 {
-		t.Error("body should be exactly one line")
+	// Body must be on a single line (no \n in view): the "request body:"
+	// label appears exactly once, on the single flattened body line.
+	if strings.Count(view, "request body:") != 1 {
+		t.Errorf("expected exactly one 'request body:' line, got %d", strings.Count(view, "request body:"))
 	}
 	// TotalLineCount must match len(feedLineToEntry).
 	if m.view.TotalLineCount() != len(m.feedLineToEntry) {
@@ -4091,14 +4097,14 @@ func TestFeedLineMappingWideExpanded(t *testing.T) {
 	m.renderFeed()
 
 	detailCount := len(m.detailLines(e))
-	if detailCount != 9 {
-		t.Fatalf("expected 9 detail lines, got %d", detailCount)
+	if detailCount != 13 {
+		t.Fatalf("expected 13 detail lines, got %d", detailCount)
 	}
-	// 2 summary + 9 detail + trailing -1 = 12
-	if len(m.feedLineToEntry) != 12 {
-		t.Errorf("expected 12 lineToEntry, got %d", len(m.feedLineToEntry))
+	// 2 summary + 13 detail + trailing -1 = 16
+	if len(m.feedLineToEntry) != 16 {
+		t.Errorf("expected 16 lineToEntry, got %d", len(m.feedLineToEntry))
 	}
-	// First 10 lines map to index 0.
+	// First 13 lines map to index 0.
 	for i := 0; i <= detailCount; i++ {
 		if m.feedLineToEntry[i] != 0 {
 			t.Errorf("lineToEntry[%d]=%d, want 0", i, m.feedLineToEntry[i])
@@ -4648,9 +4654,11 @@ func TestInspectLines_AllFields(t *testing.T) {
 	e := makeEntryForInspect()
 	lines := m.inspectLines(e)
 
-	// Check for essential fields.
-	joined := strings.Join(lines, "\n")
+	// UXR-015 — lines are now segment-wise colored; strip ANSI before the
+	// content assertions. Request/response bodies are pretty-printed JSON.
+	joined := stripANSI(strings.Join(lines, "\n"))
 	for _, want := range []string{
+		"REQUEST", // UXR-015 — new REQUEST section header (first line)
 		"request:", "POST", "/webhooks/orders",
 		"endpoint:", "order-placed",
 		"request_id:", "req-abc-123",
@@ -4659,9 +4667,10 @@ func TestInspectLines_AllFields(t *testing.T) {
 		"latency:", "12.5ms",
 		"headers:", "Content-Type", "application/json", "X-Signature", "abc",
 		"query:", "token", "x123",
-		"body:", `"order_id":42`,
+		"request body:", `"order_id": 42`,
 		"RESPONSE", "201",
 		"X-Request-ID", "res-1",
+		"response body:",
 		"status",
 		"created",
 	} {
@@ -4718,6 +4727,10 @@ func TestInspectLines_ResponseStatusTint(t *testing.T) {
 			// Should have bold section style (1; prefix in SGR, combined with colour 240).
 			if !strings.Contains(l, "\x1b[1;") || !strings.Contains(l, "38;5;240") {
 				t.Errorf("expected bold (1) + colour (240) in RESPONSE section: %q", l)
+			}
+			// AC2 — the RESPONSE header sits on the response band (17).
+			if !strings.Contains(l, sgrBG(17)) {
+				t.Errorf("expected response band (17) on the RESPONSE header: %q", l)
 			}
 		}
 	}
@@ -5458,9 +5471,14 @@ func TestInspectExpansionByteIdentical(t *testing.T) {
 	if !strings.Contains(viewAfterDismiss, "request_id:") {
 		t.Error("expected detail view after inspect dismiss")
 	}
-	// Detail view should NOT contain RESPONSE section.
-	if strings.Contains(viewAfterDismiss, "RESPONSE") {
-		t.Error("detail view should NOT contain RESPONSE section")
+	// UXR-016 — the detail view now includes the RESPONSE section.
+	if !strings.Contains(viewAfterDismiss, "RESPONSE") {
+		t.Error("detail view should now contain the RESPONSE section")
+	}
+	// The REQUEST section header is inspector-only (cyan-bold, inspectLines);
+	// the enter detail must not render it.
+	if strings.Contains(viewAfterDismiss, "REQUEST") {
+		t.Error("detail view should NOT contain the REQUEST section header")
 	}
 }
 
@@ -5980,4 +5998,1276 @@ func TestModelInspectStandaloneEmptyFeed(t *testing.T) {
 		t.Errorf("expected expandedID empty, got %q", m.expandedID)
 	}
 	_ = m.View() // must not panic
+}
+
+// ------------------- UXR-015 — colorized request detail -------------------
+
+// sgr returns the SGR foreground escape for a 256-color index, optionally bold.
+func sgr(color int, bold bool) string {
+	if bold {
+		return fmt.Sprintf("\x1b[1;38;5;%dm", color)
+	}
+	return fmt.Sprintf("\x1b[38;5;%dm", color)
+}
+
+// sgrBG returns the SGR background escape for a 256-color index.
+func sgrBG(color int) string {
+	return fmt.Sprintf("\x1b[48;5;%dm", color)
+}
+
+func TestSplitKV(t *testing.T) {
+	// First-colon split: label includes the colon, rest keeps the gap.
+	label, rest, ok := splitKV("request_id: abc-123")
+	if !ok || label != "request_id:" || rest != " abc-123" {
+		t.Fatalf("splitKV(%q) = %q, %q, %v", "request_id: abc-123", label, rest, ok)
+	}
+	// kv line: leading indent stays in the label; rest keeps the gap+value.
+	label, rest, ok = splitKV("  Content-Type: application/json")
+	if !ok || label != "  Content-Type:" || rest != " application/json" {
+		t.Fatalf("splitKV(%q) = %q, %q, %v", "  Content-Type: application/json", label, rest, ok)
+	}
+	// No colon -> ok=false.
+	if _, _, ok = splitKV("no-colon-here"); ok {
+		t.Fatal("expected ok=false for a line without a colon")
+	}
+	// Block header with empty rest.
+	label, rest, ok = splitKV("headers:")
+	if !ok || label != "headers:" || rest != "" {
+		t.Fatalf("splitKV(%q) = %q, %q, %v", "headers:", label, rest, ok)
+	}
+	// label + rest == line byte-for-byte (preserves %-14s alignment).
+	for _, line := range []string{"request_id:    abc-123", "  X-A: 1", "latency:      12.5ms"} {
+		l, r, ok := splitKV(line)
+		if !ok || l+r != line {
+			t.Errorf("splitKV(%q) = %q, %q, %v — label+rest != line", line, l, r, ok)
+		}
+	}
+}
+
+func TestHighlightJSON_Valid(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	line := `  "order_id": 42,`
+	got := highlightJSON(line, styleJSONKey)
+	// Key cyan (39).
+	if !strings.Contains(got, sgr(39, false)+`"order_id"`) {
+		t.Errorf("expected cyan (39) key in %q", got)
+	}
+	// Number yellow (220).
+	if !strings.Contains(got, sgr(220, false)+"42") {
+		t.Errorf("expected yellow (220) number in %q", got)
+	}
+	// Punctuation muted (240).
+	if !strings.Contains(got, sgr(240, false)+",") {
+		t.Errorf("expected muted (240) comma in %q", got)
+	}
+	// Leading whitespace copied verbatim unstyled.
+	if !strings.HasPrefix(got, "  ") {
+		t.Errorf("expected leading whitespace preserved in %q", got)
+	}
+}
+
+func TestHighlightJSON_Escapes(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	line := `  "msg": "line1\nline2\"quoted\\path\u0041",`
+	got := highlightJSON(line, styleJSONKey)
+	// Key still cyan.
+	if !strings.Contains(got, sgr(39, false)+`"msg"`) {
+		t.Errorf("expected cyan (39) key in %q", got)
+	}
+	// Escape sequences preserved verbatim inside the (unstyled) value.
+	if !strings.Contains(got, `\n`) || !strings.Contains(got, `\"`) ||
+		!strings.Contains(got, `\\`) || !strings.Contains(got, `\u0041`) {
+		t.Errorf("escape sequences must be preserved verbatim in %q", got)
+	}
+	// The value string must NOT be styled as a number or key.
+	if strings.Contains(got, sgr(220, false)+`"line1`) {
+		t.Error("string value must not be styled as a number")
+	}
+	if strings.Contains(got, sgr(39, false)+`"line1`) {
+		t.Error("string value must not be styled as a key")
+	}
+}
+
+func TestHighlightJSON_Numbers(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	for _, tok := range []string{"0", "42", "-7", "3.14", "1e10", "-2.5E-3"} {
+		line := `  "n": ` + tok
+		got := highlightJSON(line, styleJSONKey)
+		if !strings.Contains(got, sgr(220, false)+tok) {
+			t.Errorf("expected yellow (220) number %q in %q", tok, got)
+		}
+	}
+}
+
+func TestHighlightJSON_BoolNull(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	for _, tok := range []string{"true", "false", "null"} {
+		line := `  "b": ` + tok
+		got := highlightJSON(line, styleJSONKey)
+		if !strings.Contains(got, sgr(213, false)+tok) {
+			t.Errorf("expected magenta (213) %q in %q", tok, got)
+		}
+	}
+}
+
+func TestHighlightJSON_Nested(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	line := `  "a": [1, 2, {"k": true}]`
+	got := highlightJSON(line, styleJSONKey)
+	for _, punct := range []string{"{", "}", "[", "]", ",", ":"} {
+		if !strings.Contains(got, sgr(240, false)+punct) {
+			t.Errorf("expected muted (240) punctuation %q in %q", punct, got)
+		}
+	}
+	if !strings.Contains(got, sgr(39, false)+`"a"`) || !strings.Contains(got, sgr(39, false)+`"k"`) {
+		t.Error("expected cyan keys in nested object")
+	}
+	if !strings.Contains(got, sgr(220, false)+"1") || !strings.Contains(got, sgr(220, false)+"2") {
+		t.Error("expected yellow numbers in nested array")
+	}
+	if !strings.Contains(got, sgr(213, false)+"true") {
+		t.Error("expected magenta true in nested object")
+	}
+}
+
+func TestHighlightJSON_KeyVsValue(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	line := `  "status": "created"`
+	got := highlightJSON(line, styleJSONKey)
+	// Key cyan.
+	if !strings.Contains(got, sgr(39, false)+`"status"`) {
+		t.Errorf("expected cyan key in %q", got)
+	}
+	// String value present but unstyled.
+	if !strings.Contains(got, `"created"`) {
+		t.Errorf("expected value text in %q", got)
+	}
+	if strings.Contains(got, sgr(39, false)+`"created"`) {
+		t.Error("string value must not be styled as a key")
+	}
+	if strings.Contains(got, sgr(220, false)+`"created"`) {
+		t.Error("string value must not be styled as a number")
+	}
+}
+
+func TestHighlightJSON_Passthrough(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	for _, line := range []string{
+		"hello world", // plain text
+		"{oops",       // invalid object
+		`{"a": "abc`,  // unterminated string
+		"truex",       // word-boundary failure
+		"12abc",       // number followed by junk
+		"not json",
+	} {
+		if got := highlightJSON(line, styleJSONKey); got != line {
+			t.Errorf("highlightJSON(%q) = %q — expected byte-identical passthrough", line, got)
+		}
+	}
+	// A truncated JSON line (with the … marker) also passes through unstyled
+	// (AC15 — stakeholder decision 4).
+	truncated := `  "order_id": 42…`
+	if got := highlightJSON(truncated, styleJSONKey); got != truncated {
+		t.Errorf("truncated JSON line must pass through unchanged: %q != %q", got, truncated)
+	}
+}
+
+func TestIsJSONBody(t *testing.T) {
+	// Valid JSON under the cap.
+	if !isJSONBody(`{"a": 1}`) {
+		t.Error("expected valid JSON to be classified JSON")
+	}
+	// Invalid / plain text.
+	if isJSONBody("not json") || isJSONBody("hello") {
+		t.Error("expected plain text NOT to be classified JSON")
+	}
+	// Empty.
+	if isJSONBody("") {
+		t.Error("expected empty body NOT to be classified JSON")
+	}
+	// Oversized: beyond the JSON size cap (formatBody's plain path).
+	big := "[" + strings.Repeat("1", maxInspectJSONBytes) + "]"
+	if isJSONBody(big) {
+		t.Error("expected oversized body NOT to be classified JSON")
+	}
+	// Exactly at the cap still classifies JSON (mirrors formatBody).
+	atCap := `"` + strings.Repeat("a", maxInspectJSONBytes-2) + `"`
+	if !isJSONBody(atCap) {
+		t.Error("expected body at the JSON size cap to be classified JSON")
+	}
+}
+
+func TestDetailBodyYellowLabel(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Body:      "plain request payload",
+	}
+	m := makeModelForInspect(80)
+
+	var bodyLine string
+	for _, l := range m.detailLines(e) {
+		if strings.Contains(stripANSI(l), "request body:") {
+			bodyLine = l
+			break
+		}
+	}
+	if bodyLine == "" {
+		t.Fatal("expected a 'request body:' detail line")
+	}
+	// AC4 — cyan-bold label + yellow (220) content, single line. The tint
+	// wraps the whole rest (gap + value), so expect the leading gap inside.
+	if !strings.Contains(bodyLine, sgr(39, true)+"request body:") {
+		t.Errorf("expected cyan-bold label in %q", bodyLine)
+	}
+	if !strings.Contains(bodyLine, sgr(220, false)+"  plain request payload") {
+		t.Errorf("expected yellow (220) body content in %q", bodyLine)
+	}
+}
+
+func TestInspectBodyTintsReqResp(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:    "req-0",
+		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
+		Body:         "plain request payload",
+		ResponseBody: "plain response payload",
+	}
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+
+	var reqLine, respLine string
+	for _, l := range lines {
+		plain := stripANSI(l)
+		if strings.Contains(plain, "request body:") {
+			reqLine = l
+		}
+		if strings.Contains(plain, "response body:") {
+			respLine = l
+		}
+	}
+	if reqLine == "" || respLine == "" {
+		t.Fatalf("expected request+response body lines, got request=%q response=%q", reqLine, respLine)
+	}
+	// AC5/AC8 — non-JSON: request yellow (220), response green (76), no
+	// JSON-key styling. The tint wraps the whole rest (gap + value).
+	if !strings.Contains(reqLine, sgr(220, false)+"  plain request payload") {
+		t.Errorf("expected yellow (220) request body in %q", reqLine)
+	}
+	if strings.Contains(reqLine, sgr(39, false)+`"`) {
+		t.Error("plain request body must not be JSON-highlighted")
+	}
+	if !strings.Contains(respLine, sgr(76, false)+" plain response payload") {
+		t.Errorf("expected green (76) response body in %q", respLine)
+	}
+	if strings.Contains(respLine, sgr(39, false)+`"`) {
+		t.Error("plain response body must not be JSON-highlighted")
+	}
+}
+
+func TestInspectJSONHighlightBothSections(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect() // Body={"order_id":42}, ResponseBody={"status":"created"}
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+	joined := strings.Join(lines, "\n")
+
+	// AC6 — JSON request section: key cyan, number yellow.
+	if !strings.Contains(joined, sgr(39, false)+`"order_id"`) {
+		t.Error("expected cyan JSON key in REQUEST body")
+	}
+	if !strings.Contains(joined, sgr(220, false)+"42") {
+		t.Error("expected yellow JSON number in REQUEST body")
+	}
+	// JSON response section (UXR-017): key magenta (213), string value unstyled.
+	if !strings.Contains(joined, sgr(213, false)+`"status"`) {
+		t.Error("expected magenta (213) JSON key in RESPONSE body")
+	}
+	if strings.Contains(joined, sgr(220, false)+`"created"`) {
+		t.Error("string value must stay unstyled")
+	}
+	// AC7 — both bodies routed through formatBody (pretty-printed, multi-line).
+	plain := stripANSI(joined)
+	if !strings.Contains(plain, `"order_id": 42`) {
+		t.Error("REQUEST body must be pretty-printed via formatBody")
+	}
+	if !strings.Contains(plain, `"status": "created"`) {
+		t.Error("RESPONSE body must be pretty-printed via formatBody")
+	}
+}
+
+func TestDetailHeaderQueryKeyCyan(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Headers:   map[string]string{"Content-Type": "application/json"},
+		Query:     map[string]string{"page": "1"},
+	}
+	m := makeModelForInspect(80)
+
+	var headerLine, queryLine string
+	for _, l := range m.detailLines(e) {
+		plain := stripANSI(l)
+		if strings.Contains(plain, "Content-Type:") {
+			headerLine = l
+		}
+		if strings.Contains(plain, "page:") {
+			queryLine = l
+		}
+	}
+	// AC1 — header key cyan, value default foreground.
+	if !strings.Contains(headerLine, sgr(39, false)+"Content-Type:") {
+		t.Errorf("expected cyan header key in %q", headerLine)
+	}
+	if !strings.Contains(headerLine, " application/json") {
+		t.Errorf("expected unstyled header value in %q", headerLine)
+	}
+	if strings.Contains(headerLine, sgr(39, false)+" application/json") {
+		t.Error("header value must not be styled")
+	}
+	// AC2 — query key cyan, value default foreground.
+	if !strings.Contains(queryLine, sgr(39, false)+"page:") {
+		t.Errorf("expected cyan query key in %q", queryLine)
+	}
+	if !strings.Contains(queryLine, " 1") {
+		t.Errorf("expected unstyled query value in %q", queryLine)
+	}
+}
+
+func TestFixedLabelsCyanBold(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	variant := 2
+	e.ResponseVariant = &variant
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.inspectLines(e), "\n")
+
+	// AC3 — every fixed-field label is cyan bold.
+	for _, label := range []string{
+		"request:", "endpoint:", "request_id:", "matched:", "timestamp:", "latency:", "variant:",
+	} {
+		if !strings.Contains(joined, sgr(39, true)+label) {
+			t.Errorf("expected cyan-bold label %q in inspect output", label)
+		}
+	}
+	// detailLines fixed fields + %-14s label column.
+	for _, l := range m.detailLines(e) {
+		if strings.Contains(stripANSI(l), "request_id:    req-abc-123") {
+			if !strings.Contains(l, sgr(39, true)+"request_id:") {
+				t.Errorf("expected cyan-bold request_id label in %q", l)
+			}
+		}
+	}
+}
+
+func TestSanitizeBeforeStyle(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Body:      "bad\x1b[31mRED body",
+		Headers:   map[string]string{"X-Esc": "val\x1b[5m"},
+		Query:     map[string]string{"q": "a\x00b"},
+	}
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.inspectLines(e), "\n")
+
+	// AC9 — injected control/ANSI sequences stripped BEFORE styling.
+	if strings.Contains(joined, "\x1b[31m") || strings.Contains(joined, "\x1b[5m") {
+		t.Error("injected ANSI sequences must be sanitized away")
+	}
+	if strings.Contains(joined, "\x00") {
+		t.Error("injected NUL must be sanitized away")
+	}
+	// Style codes are still present (styling applied after sanitize).
+	if !strings.Contains(joined, sgr(220, false)) {
+		t.Error("expected style codes in output")
+	}
+	// Sanitized content visible in the plain rendering.
+	plain := stripANSI(joined)
+	if !strings.Contains(plain, "RED body") || !strings.Contains(plain, "a b") {
+		t.Error("expected sanitized content to appear")
+	}
+}
+
+func TestTruncationMarkerNoAnsiCorruption(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Body:      "this is a very long body that should be truncated at the specified width so the ellipsis marker renders",
+		Headers:   map[string]string{"Content-Type": "application/json"},
+	}
+	m := makeModelForInspect(40)
+	lines := m.detailLines(e)
+
+	// AC10 — truncation on plain text first: widths fit and no newlines.
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w > m.view.Width {
+			t.Errorf("detail line width %d exceeds viewport width %d: %q", w, m.view.Width, l)
+		}
+		if strings.Contains(l, "\n") {
+			t.Errorf("detail line contains newline: %q", l)
+		}
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(stripANSI(joined), "…") {
+		t.Error("expected ellipsis marker for truncated content")
+	}
+}
+
+func TestPlaceholdersMarkersMuted(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	// AC12 — empty cases stay muted placeholders.
+	empty := mock.LogEntry{RequestID: "req-empty", Timestamp: time.Now().UTC().Format(time.RFC3339Nano)}
+	m := makeModelForInspect(80)
+	joined := strings.Join(m.inspectLines(empty), "\n")
+	for _, ph := range []string{"(none)", "(empty)"} {
+		if !strings.Contains(stripANSI(joined), ph) {
+			t.Errorf("expected placeholder %q in inspect output", ph)
+		}
+	}
+	// Placeholders are NOT cyan-labeled (no styleLabel on the label segment).
+	if strings.Contains(joined, sgr(39, true)+"headers:") || strings.Contains(joined, sgr(39, true)+"query:") {
+		t.Error("placeholder labels must stay muted")
+	}
+
+	// AC13 — cap markers stay muted and still count correctly.
+	e := makeEntryForInspect()
+	e.ResponseHeaders = map[string]string{}
+	for i := 0; i < maxRenderedHeaders+5; i++ {
+		e.ResponseHeaders[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	joined = strings.Join(m.inspectLines(e), "\n")
+	if !strings.Contains(stripANSI(joined), "(5 more headers)") {
+		t.Errorf("expected '(5 more headers)' marker, got:\n%s", stripANSI(joined))
+	}
+	if strings.Contains(joined, sgr(39, true)+"  (5 more headers)") {
+		t.Error("cap marker must be muted, not cyan-labeled")
+	}
+	if strings.Contains(joined, "X-H30") {
+		t.Error("headers beyond the cap must not render")
+	}
+}
+
+func TestStyledLinesNoNewline(t *testing.T) {
+	e := makeEntryForInspect()
+	variant := 2
+	e.ResponseVariant = &variant
+	m := makeModelForInspect(100)
+
+	// AC14 — no returned line contains a newline after styling, so the
+	// feedLineToEntry/entryToLine mapping stays correct.
+	for _, lines := range [][]string{m.detailLines(e), m.inspectLines(e)} {
+		for i, l := range lines {
+			if strings.Contains(l, "\n") {
+				t.Errorf("styled line %d contains newline: %q", i, l)
+			}
+		}
+	}
+}
+
+func TestInspectRequestHeader(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	m := makeModelForInspect(100)
+	e := makeEntryForInspect()
+	lines := m.inspectLines(e)
+
+	// AC11 — the first line is the NEW cyan-bold REQUEST section header.
+	first := lines[0]
+	if plain := stripANSI(first); !strings.HasPrefix(plain, "  │ REQUEST") {
+		t.Errorf("expected REQUEST header as first line, got %q", plain)
+	}
+	if !strings.Contains(first, sgr(39, true)+"  │ REQUEST") {
+		t.Errorf("expected cyan-bold REQUEST header (gutter inside style), got %q", first)
+	}
+	// No status tint on the REQUEST header.
+	if strings.Contains(first, sgr(76, false)) || strings.Contains(first, sgr(196, false)) {
+		t.Error("REQUEST header must not carry a status tint")
+	}
+	// RESPONSE header keeps its bold-240 + tint styling (unchanged).
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "\x1b[1;38;5;240m") || !strings.Contains(joined, sgr(76, false)+"201") {
+		t.Error("RESPONSE header must keep bold-240 + status tint")
+	}
+}
+
+// ------------------- UXR-016 — response section in the enter detail -------------------
+
+func TestDetailLines_ResponseStatusTint(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect() // ResponseStatus 201
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+
+	var respLine string
+	for _, l := range lines {
+		if plain := stripANSI(l); strings.HasPrefix(plain, "  │ RESPONSE") {
+			respLine = l
+			break
+		}
+	}
+	if respLine == "" {
+		t.Fatal("expected a '  │ RESPONSE' detail line")
+	}
+	// AC1 — section style bold-240 with the gutter inside the style.
+	if !strings.Contains(respLine, sgr(240, true)+"  │ RESPONSE") {
+		t.Errorf("expected bold-240 section style (gutter inside) in %q", respLine)
+	}
+	// Status tint: green (76) for 201.
+	if !strings.Contains(respLine, sgr(76, false)+"201") {
+		t.Errorf("expected green (76) status tint in %q", respLine)
+	}
+	// AC2 — the RESPONSE header sits on the response band (17).
+	if !strings.Contains(respLine, sgrBG(17)) {
+		t.Errorf("expected response band (17) on the RESPONSE header: %q", respLine)
+	}
+}
+
+func TestDetailLines_ResponseJSONHighlight(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect() // ResponseBody={"status":"created"}
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+
+	// AC2/AC4 — response body routed through formatBody (pretty-printed,
+	// multi-line) and JSON-syntax-highlighted (kindJSONResp). UXR-017 —
+	// response JSON keys are magenta (213), not cyan.
+	plain := stripANSI(joined)
+	if !strings.Contains(plain, `"status": "created"`) {
+		t.Error("RESPONSE body must be pretty-printed via formatBody")
+	}
+	if !strings.Contains(joined, sgr(213, false)+`"status"`) {
+		t.Error("expected magenta (213) JSON key in RESPONSE body")
+	}
+	// String value present but unstyled (no yellow/number styling).
+	if strings.Contains(joined, sgr(220, false)+`"created"`) {
+		t.Error("string value must stay unstyled (not yellow)")
+	}
+	if strings.Contains(joined, sgr(213, false)+`"created"`) {
+		t.Error("string value must not be styled as a key")
+	}
+}
+
+func TestDetailLines_ResponsePlainGreen(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:    "req-0",
+		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseBody: "plain response payload",
+	}
+	m := makeModelForInspect(100)
+
+	var respLine string
+	for _, l := range m.detailLines(e) {
+		if strings.Contains(stripANSI(l), "response body:") {
+			respLine = l
+			break
+		}
+	}
+	if respLine == "" {
+		t.Fatal("expected a 'response body:' detail line")
+	}
+	// AC3 — non-JSON response body tinted green (76), no JSON key styling.
+	if !strings.Contains(respLine, sgr(76, false)+" plain response payload") {
+		t.Errorf("expected green (76) response body in %q", respLine)
+	}
+	if strings.Contains(respLine, sgr(39, false)+`"`) {
+		t.Error("plain response body must not be JSON-highlighted")
+	}
+}
+
+func TestDetailLines_ResponseHeaderCap(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:       "req-resp-cap",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseHeaders: map[string]string{},
+	}
+	for i := 0; i < maxRenderedHeaders+5; i++ {
+		e.ResponseHeaders[fmt.Sprintf("X-H%02d", i)] = fmt.Sprintf("val%02d", i)
+	}
+	m := makeModelForInspect(120)
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+	// AC4 — capped response headers with a muted "(N more headers)" marker.
+	if !strings.Contains(stripANSI(joined), "(5 more headers)") {
+		t.Errorf("expected '(5 more headers)' marker, got:\n%s", stripANSI(joined))
+	}
+	// Zero-padded sorting: X-H00..X-H29 are the first 30; X-H30+ are beyond
+	// the cap and must not be rendered.
+	if strings.Contains(joined, "X-H30") {
+		t.Error("should not render response headers beyond cap")
+	}
+	if !strings.Contains(joined, "X-H29") {
+		t.Error("expected the 30th response header (X-H29) to be rendered")
+	}
+	// Cap marker must be muted, not cyan-labeled.
+	if strings.Contains(joined, sgr(39, true)+"  (5 more headers)") {
+		t.Error("cap marker must be muted, not cyan-labeled")
+	}
+}
+
+func TestDetailLines_ResponseEmptyPlaceholders(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID: "req-0",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.detailLines(e), "\n")
+	plain := stripANSI(joined)
+
+	// AC5 — empty response headers/body render muted placeholders alongside
+	// the request-side ones: "(none)" appears for request headers, request
+	// query, and response headers; "(empty)" for request and response bodies.
+	if strings.Count(plain, "(none)") != 3 {
+		t.Errorf("expected 3 '(none)' placeholders (request headers + query + response headers), got:\n%s", plain)
+	}
+	if strings.Count(plain, "(empty)") != 2 {
+		t.Errorf("expected 2 '(empty)' placeholders (request + response bodies), got:\n%s", plain)
+	}
+	// Placeholder labels stay muted, not cyan-bold.
+	if strings.Contains(joined, sgr(39, true)+"headers:") || strings.Contains(joined, sgr(39, true)+"response body:") {
+		t.Error("placeholder labels must stay muted")
+	}
+}
+
+func TestDetailLines_UnmatchedResponse(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:       "req-404",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		Matched:         false,
+		Method:          "GET",
+		Path:            "/nonexistent",
+		ResponseStatus:  404,
+		LatencyMs:       1.0,
+		ResponseHeaders: map[string]string{"Content-Type": "application/json"},
+		ResponseBody:    `{"error":"no matching endpoint"}`,
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.expandedID = "req-404"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	joined := strings.Join(lines, "\n")
+
+	// AC6 — an unmatched entry still renders a RESPONSE section: 404 tinted
+	// yellow (220) with the server's unmatched headers/body.
+	if !strings.Contains(joined, sgr(220, false)+"404") {
+		t.Errorf("expected yellow (220) 404 status tint in RESPONSE header, got:\n%s", joined)
+	}
+	if !strings.Contains(stripANSI(joined), "Content-Type: application/json") {
+		t.Errorf("expected unmatched Content-Type response header, got:\n%s", stripANSI(joined))
+	}
+	if !strings.Contains(stripANSI(joined), `"error": "no matching endpoint"`) {
+		t.Errorf("expected unmatched 404 body, got:\n%s", stripANSI(joined))
+	}
+}
+
+func TestDetailLines_ResponseVariant(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	variant := 2
+	e.ResponseVariant = &variant
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+
+	var variantLine string
+	for _, l := range lines {
+		if strings.Contains(stripANSI(l), "variant:") {
+			variantLine = l
+			break
+		}
+	}
+	if variantLine == "" {
+		t.Fatal("expected a 'variant:' detail line under the RESPONSE header")
+	}
+	// AC7 — cyan-bold fixed label carrying the variant index.
+	if !strings.Contains(variantLine, sgr(39, true)+"variant:") {
+		t.Errorf("expected cyan-bold 'variant:' label in %q", variantLine)
+	}
+	if !strings.Contains(stripANSI(variantLine), "2") {
+		t.Errorf("expected variant index 2 in %q", variantLine)
+	}
+}
+
+func TestDetailLines_ResponseVariant_NilOmitsLine(t *testing.T) {
+	e := makeEntryForInspect() // ResponseVariant is nil (zero value)
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.detailLines(e), "\n")
+	if strings.Contains(joined, "variant:") {
+		t.Errorf("expected no 'variant:' line when ResponseVariant is nil, got:\n%s", joined)
+	}
+}
+
+func TestDetailLines_ResponseNoNewline(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:       "req-0",
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseBody:    "line1\nline2\x1b[31mRED",
+		ResponseHeaders: map[string]string{"X-Esc": "val\x1b[5m", "X-Multi": "a\nb"},
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 100, 24)
+	m.last = src.snap
+	m.expandedID = "req-0"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	// AC8 — no returned line contains \n (line-to-entry mapping invariant)
+	// and injected ANSI/control sequences are sanitized before styling.
+	for i, l := range lines {
+		if strings.Contains(l, "\n") {
+			t.Errorf("detail line %d contains newline: %q", i, l)
+		}
+		if strings.Contains(l, "\x1b[31m") || strings.Contains(l, "\x1b[5m") {
+			t.Errorf("detail line %d contains injected ANSI: %q", i, l)
+		}
+	}
+	// AC8 — band()'s ANSI-surgery safety argument depends on sanitize: the
+	// injected ESC bytes must be gone, leaving only our own band/style codes.
+	// Every response line therefore still carries the 17 band around the
+	// (now-safe) content.
+	sepIdx := -1
+	for i, l := range lines {
+		if strings.Contains(stripANSI(l), "request body:") {
+			sepIdx = i + 1
+			break
+		}
+	}
+	if sepIdx < 0 {
+		t.Fatal("expected separator after 'request body:'")
+	}
+	// The separator itself closes the request band (236); the 17 band starts
+	// with the RESPONSE header.
+	for i := sepIdx + 1; i < len(lines); i++ {
+		if !strings.Contains(lines[i], sgrBG(17)) {
+			t.Errorf("response line %d missing the 17 band around sanitized content: %q", i, lines[i])
+		}
+	}
+	// Sanitized content visible in the plain rendering.
+	plain := stripANSI(strings.Join(lines, "\n"))
+	if !strings.Contains(plain, "RED") || !strings.Contains(plain, "line1") {
+		t.Error("expected sanitized content to appear")
+	}
+	// feedLineToEntry == TotalLineCount invariant holds with the expanded row.
+	if len(m.feedLineToEntry) != m.view.TotalLineCount() {
+		t.Errorf("len(lineToEntry)=%d, TotalLineCount=%d", len(m.feedLineToEntry), m.view.TotalLineCount())
+	}
+}
+
+func TestDetailLines_ResponseWidthDegradation(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:      "req-0",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseStatus: 200,
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 20, 24)
+	m.last = src.snap
+	m.expandedID = "req-0"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	var respLine string
+	for _, l := range lines {
+		if strings.Contains(stripANSI(l), "RESP") {
+			respLine = l
+			break
+		}
+	}
+	if respLine == "" {
+		t.Fatal("expected a RESPONSE header detail line")
+	}
+	// AC9 — the tinted header overflows a width-20 viewport, so it degrades
+	// to the muted "RESPONSE <code>" form: no status tint, no bold section.
+	if strings.Contains(respLine, sgr(76, false)) {
+		t.Errorf("degraded RESPONSE header must not carry the 2xx tint: %q", respLine)
+	}
+	if strings.Contains(respLine, sgr(240, true)) {
+		t.Errorf("degraded RESPONSE header must not use the bold section style: %q", respLine)
+	}
+	if !strings.Contains(respLine, sgr(240, false)) {
+		t.Errorf("degraded RESPONSE header should render muted (240): %q", respLine)
+	}
+	// All detail lines must fit the viewport.
+	for i, l := range lines {
+		if w := lipgloss.Width(l); w > m.view.Width {
+			t.Errorf("detail line %d width %d exceeds viewport %d: %q", i, w, m.view.Width, l)
+		}
+	}
+}
+
+func TestDetailLines_ResponseSectionPosition(t *testing.T) {
+	e := makeEntryForInspect()
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+
+	// AC10 — the response section is appended strictly after the request
+	// side: the UXR-017 separator line sits right after "request body:",
+	// then the RESPONSE header.
+	bodyIdx := -1
+	for i, l := range lines {
+		if strings.Contains(stripANSI(l), "request body:") {
+			bodyIdx = i
+			break
+		}
+	}
+	if bodyIdx < 0 {
+		t.Fatal("expected a 'request body:' detail line")
+	}
+	if bodyIdx+2 >= len(lines) {
+		t.Fatal("expected a separator and a RESPONSE header after 'request body:'")
+	}
+	sep := stripANSI(lines[bodyIdx+1])
+	if !strings.HasPrefix(sep, "  │ ─") {
+		t.Errorf("expected UXR-017 separator after 'request body:', got %q", sep)
+	}
+	next := stripANSI(lines[bodyIdx+2])
+	if !strings.HasPrefix(next, "  │ RESPONSE") {
+		t.Errorf("expected RESPONSE header after the separator, got %q", next)
+	}
+}
+
+func TestDetailLines_TinyViewport(t *testing.T) {
+	e := makeEntryForInspect()
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 10, 24) // Very narrow.
+	m.last = src.snap
+	m.expandedID = e.RequestID
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	// Must not panic and every line must be non-empty.
+	for i, l := range lines {
+		if len(l) == 0 {
+			t.Errorf("detail line %d is empty", i)
+		}
+	}
+}
+
+// ------------------- UXR-017 — request/response visual separation -------------------
+
+func TestBandHelper(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	// Plain input: prefix + content + pad + reset, padded to width.
+	got := band("hi", lipgloss.Color("22"), 10)
+	if !strings.HasPrefix(got, sgrBG(22)) {
+		t.Errorf("expected bg prefix, got %q", got)
+	}
+	if !strings.HasSuffix(got, "\x1b[0m") {
+		t.Errorf("expected trailing reset, got %q", got)
+	}
+	if lipgloss.Width(got) != 10 {
+		t.Errorf("expected width 10, got %d: %q", lipgloss.Width(got), got)
+	}
+	body := strings.TrimSuffix(got[len(sgrBG(22)):], "\x1b[0m")
+	if body != "hi"+strings.Repeat(" ", 8) {
+		t.Errorf("expected 'hi' + 8 padding spaces, got %q", body)
+	}
+
+	// Multi-segment styled input: bg re-asserted after every reset so the
+	// UXR-008 inner-reset problem can't clear the band.
+	styled := sgr(76, false) + "ok" + "\x1b[0m"
+	got = band(styled, lipgloss.Color("22"), 8)
+	if !strings.Contains(got, "\x1b[0m"+sgrBG(22)) {
+		t.Errorf("expected bg re-asserted after reset, got %q", got)
+	}
+	if lipgloss.Width(got) != 8 {
+		t.Errorf("expected width 8, got %d: %q", lipgloss.Width(got), got)
+	}
+
+	// Exact width: no padding, no trailing spaces.
+	got = band("abcd", lipgloss.Color("236"), 4)
+	if lipgloss.Width(got) != 4 {
+		t.Errorf("expected width 4, got %d: %q", lipgloss.Width(got), got)
+	}
+	if plain := stripANSI(got); plain != "abcd" {
+		t.Errorf("expected 'abcd', got %q", plain)
+	}
+
+	// Wide-rune measurement (never len()): "─" is 3 bytes but 1 cell, so
+	// padding fills in cells, not bytes.
+	got = band("─", lipgloss.Color("22"), 5)
+	if lipgloss.Width(got) != 5 {
+		t.Errorf("expected width 5 for wide-rune input, got %d: %q", lipgloss.Width(got), got)
+	}
+	if plain := stripANSI(got); plain != "─"+strings.Repeat(" ", 4) {
+		t.Errorf("expected '─' + 4 spaces, got %q", plain)
+	}
+}
+
+func TestSeparatorLine(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+
+	// Position: immediately after "request body:".
+	bodyIdx := -1
+	for i, l := range lines {
+		if strings.Contains(stripANSI(l), "request body:") {
+			bodyIdx = i
+			break
+		}
+	}
+	if bodyIdx < 0 {
+		t.Fatal("expected a 'request body:' detail line")
+	}
+	if bodyIdx+2 >= len(lines) {
+		t.Fatal("expected separator + RESPONSE header after 'request body:'")
+	}
+	sep := lines[bodyIdx+1]
+	plain := stripANSI(sep)
+	// Plain content: gutter + ─ runes spanning the content width.
+	contentW := m.view.Width - 4
+	if !strings.HasPrefix(plain, "  │ "+strings.Repeat("─", contentW)) {
+		t.Errorf("expected gutter + %d ─ runes, got %q", contentW, plain)
+	}
+	// Muted foreground (240).
+	if !strings.Contains(sep, sgr(240, false)) {
+		t.Errorf("expected muted (240) foreground on separator, got %q", sep)
+	}
+	// No newline — a single content line.
+	if strings.Contains(sep, "\n") {
+		t.Error("separator must not contain a newline")
+	}
+	// Rendered on the REQUEST band (236).
+	if !strings.Contains(sep, sgrBG(236)) {
+		t.Errorf("expected REQUEST band background (236), got %q", sep)
+	}
+	// The next line is the RESPONSE header.
+	if next := stripANSI(lines[bodyIdx+2]); !strings.HasPrefix(next, "  │ RESPONSE") {
+		t.Errorf("expected RESPONSE header after separator, got %q", next)
+	}
+}
+
+func TestBandBackgrounds(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	variant := 2
+	e.ResponseVariant = &variant
+	m := makeModelForInspect(100)
+	lines := m.detailLines(e)
+
+	sepIdx := -1
+	for i, l := range lines {
+		if strings.Contains(stripANSI(l), "request body:") {
+			sepIdx = i + 1
+			break
+		}
+	}
+	if sepIdx < 0 {
+		t.Fatal("expected separator index")
+	}
+	// Every request line (including the separator) carries 236.
+	for i := 0; i <= sepIdx; i++ {
+		if !strings.Contains(lines[i], sgrBG(236)) {
+			t.Errorf("request line %d missing 236 band: %q", i, lines[i])
+		}
+	}
+	// Every response line (RESPONSE header, variant, response headers,
+	// response body) carries 17.
+	for i := sepIdx + 1; i < len(lines); i++ {
+		if !strings.Contains(lines[i], sgrBG(17)) {
+			t.Errorf("response line %d missing 17 band: %q", i, lines[i])
+		}
+	}
+	// Bands are exclusive per section.
+	if strings.Contains(strings.Join(lines[:sepIdx+1], ""), sgrBG(17)) {
+		t.Error("request lines must not carry the 17 band")
+	}
+	if strings.Contains(strings.Join(lines[sepIdx+1:], ""), sgrBG(236)) {
+		t.Error("response lines must not carry the 236 band")
+	}
+}
+
+func TestBandFullWidthPadding(t *testing.T) {
+	e := makeEntryForInspect()
+	m := makeModelForInspect(100)
+	for name, lines := range map[string][]string{"detail": m.detailLines(e), "inspect": m.inspectLines(e)} {
+		for i, l := range lines {
+			if w := lipgloss.Width(l); w != m.view.Width {
+				t.Errorf("%s line %d width %d != viewport %d: %q", name, i, w, m.view.Width, l)
+			}
+		}
+	}
+}
+
+func TestResponseHeaderKeysMagenta(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.detailLines(e), "\n")
+
+	// Response header keys are magenta (213), not cyan.
+	if !strings.Contains(joined, sgr(213, false)+"X-Request-ID:") {
+		t.Errorf("expected magenta response header key, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, sgr(213, false)+"Content-Type:") {
+		t.Errorf("expected magenta response header key, got:\n%s", joined)
+	}
+	if strings.Contains(joined, sgr(39, false)+"X-Request-ID:") {
+		t.Error("response header key must not be cyan (39)")
+	}
+	// Request header/query keys stay cyan (39).
+	if !strings.Contains(joined, sgr(39, false)+"X-Signature:") {
+		t.Errorf("expected cyan request header key, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, sgr(39, false)+"token:") {
+		t.Errorf("expected cyan request query key, got:\n%s", joined)
+	}
+	// Block labels stay cyan-bold (labels are not keys).
+	if !strings.Contains(joined, sgr(39, true)+"headers:") {
+		t.Errorf("expected cyan-bold block label, got:\n%s", joined)
+	}
+}
+
+func TestResponseJSONKeysMagenta(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	e.ResponseBody = `{"status":"created","ok":true,"n":42}`
+	m := makeModelForInspect(100)
+	joined := strings.Join(m.inspectLines(e), "\n")
+
+	// Response JSON object keys are magenta (213); request JSON keys stay cyan.
+	if !strings.Contains(joined, sgr(213, false)+`"status"`) {
+		t.Errorf("expected magenta response JSON key, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, sgr(39, false)+`"order_id"`) {
+		t.Errorf("expected cyan request JSON key, got:\n%s", joined)
+	}
+	// String values stay default foreground.
+	if strings.Contains(joined, sgr(213, false)+`"created"`) {
+		t.Error("string value must stay unstyled (not magenta key)")
+	}
+	if strings.Contains(joined, sgr(220, false)+`"created"`) {
+		t.Error("string value must stay unstyled (not yellow number)")
+	}
+	// Numbers/bools/punct colors unchanged.
+	if !strings.Contains(joined, sgr(220, false)+"42") {
+		t.Errorf("expected yellow (220) number, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, sgr(213, false)+"true") {
+		t.Errorf("expected magenta (213) bool, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, sgr(240, false)+"{") || !strings.Contains(joined, sgr(240, false)+":") {
+		t.Errorf("expected muted (240) punctuation, got:\n%s", joined)
+	}
+}
+
+func TestPlainResponseBodyGreenOnBand(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:    "req-0",
+		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseBody: "plain response payload",
+	}
+	m := makeModelForInspect(100)
+
+	var respLine string
+	for _, l := range m.detailLines(e) {
+		if strings.Contains(stripANSI(l), "response body:") {
+			respLine = l
+			break
+		}
+	}
+	if respLine == "" {
+		t.Fatal("expected a 'response body:' detail line")
+	}
+	// AC5 — green (76) text on the response background band (17), same line.
+	if !strings.Contains(respLine, sgr(76, false)+" plain response payload") {
+		t.Errorf("expected green (76) response body in %q", respLine)
+	}
+	if !strings.Contains(respLine, sgrBG(17)) {
+		t.Errorf("expected response band (17) on body line %q", respLine)
+	}
+}
+
+func TestNarrowDegradationBand(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := mock.LogEntry{
+		RequestID:      "req-0",
+		Timestamp:      time.Now().UTC().Format(time.RFC3339Nano),
+		ResponseStatus: 200,
+	}
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 20, 24)
+	m.last = src.snap
+	m.expandedID = "req-0"
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	var respLine string
+	for _, l := range lines {
+		if strings.Contains(stripANSI(l), "RESP") {
+			respLine = l
+			break
+		}
+	}
+	if respLine == "" {
+		t.Fatal("expected a RESPONSE header detail line")
+	}
+	// AC7 — the degraded muted header still carries the response band (17)
+	// and full-width padding.
+	if !strings.Contains(respLine, sgr(240, false)) {
+		t.Errorf("degraded RESPONSE header should render muted (240): %q", respLine)
+	}
+	if !strings.Contains(respLine, sgrBG(17)) {
+		t.Errorf("degraded RESPONSE header must carry the 17 band: %q", respLine)
+	}
+	// All rendered lines still fit the viewport.
+	for i, l := range lines {
+		if w := lipgloss.Width(l); w > m.view.Width {
+			t.Errorf("detail line %d width %d exceeds viewport %d: %q", i, w, m.view.Width, l)
+		}
+	}
+}
+
+func TestBandNoNewlineMapping(t *testing.T) {
+	e := makeEntryForInspect()
+	entries := []mock.LogEntry{e}
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.expandedID = e.RequestID
+	m.renderFeed()
+
+	lines := m.detailLines(e)
+	sepIdx := -1
+	for i, l := range lines {
+		if strings.Contains(stripANSI(l), "request body:") {
+			sepIdx = i + 1
+			break
+		}
+	}
+	if sepIdx < 0 || sepIdx >= len(lines) {
+		t.Fatal("expected separator line in detail lines")
+	}
+	// AC8 — the separator is a single content line (no \n), so the
+	// feedLineToEntry/entryToLine mapping stays correct.
+	if strings.Contains(lines[sepIdx], "\n") {
+		t.Errorf("separator must not contain newline: %q", lines[sepIdx])
+	}
+	if len(m.feedLineToEntry) != m.view.TotalLineCount() {
+		t.Errorf("len(lineToEntry)=%d, TotalLineCount=%d", len(m.feedLineToEntry), m.view.TotalLineCount())
+	}
+}
+
+func TestInspectSeparatorAndBands(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.ANSI)
+
+	e := makeEntryForInspect()
+	m := makeModelForInspect(100)
+	lines := m.inspectLines(e)
+
+	// AC10 — the inspector gains the same separator + bands.
+	respIdx := -1
+	for i, l := range lines {
+		if strings.HasPrefix(stripANSI(l), "  │ RESPONSE") {
+			respIdx = i
+			break
+		}
+	}
+	if respIdx < 1 {
+		t.Fatal("expected RESPONSE header in inspect lines")
+	}
+	sep := lines[respIdx-1]
+	if !strings.HasPrefix(stripANSI(sep), "  │ ─") {
+		t.Errorf("expected separator directly before RESPONSE header, got %q", stripANSI(sep))
+	}
+	if !strings.Contains(sep, sgrBG(236)) {
+		t.Errorf("separator must carry the 236 band, got %q", sep)
+	}
+	if !strings.Contains(lines[respIdx], sgrBG(17)) {
+		t.Errorf("RESPONSE header must carry the 17 band, got %q", lines[respIdx])
+	}
+	// Magenta response keys + cyan-bold REQUEST header preserved.
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, sgr(213, false)+"X-Request-ID:") {
+		t.Errorf("expected magenta response header key, got:\n%s", joined)
+	}
+	if !strings.Contains(lines[0], sgr(39, true)+"  │ REQUEST") {
+		t.Errorf("expected cyan-bold REQUEST header, got %q", lines[0])
+	}
 }

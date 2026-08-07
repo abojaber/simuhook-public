@@ -31,6 +31,32 @@ var (
 
 	// WS-018 / UXR-013 — request/response inspector.
 	styleSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
+
+	// UXR-015 — request-detail coloring.
+	// Feed lines are NOT wide-layout chrome: the colour-39 chip reservation
+	// (architecture.md UXR-009/010/011) applies to panel title rows only, and cyan
+	// 39 already appears in feed content via 3xx status tints.
+	styleKey          = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))            // header/query keys (non-bold)
+	styleLabel        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")) // field labels, block headers, REQUEST section header
+	styleRequestBody  = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))           // non-JSON request body content
+	styleResponseBody = lipgloss.NewStyle().Foreground(lipgloss.Color("76"))            // non-JSON response body content
+	styleJSONKey      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))            // JSON object keys
+	styleJSONNumber   = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))           // JSON numbers
+	styleJSONBool     = lipgloss.NewStyle().Foreground(lipgloss.Color("213"))           // JSON true/false/null
+	styleJSONPunct    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))           // JSON punctuation (muted)
+)
+
+// UXR-017 — request/response visual separation.
+const (
+	sectionReqBG  = "236" // REQUEST band (selection-band family)
+	sectionRespBG = "17"  // RESPONSE band (dark navy — pairs with magenta-213 keys, green-76 body, yellow-220 numbers; distinct hue from the gray request band, no green-on-green clash)
+)
+
+var (
+	styleSectionReq  = lipgloss.NewStyle().Background(lipgloss.Color(sectionReqBG))
+	styleSectionResp = lipgloss.NewStyle().Background(lipgloss.Color(sectionRespBG))
+	styleKeyResp     = lipgloss.NewStyle().Foreground(lipgloss.Color("213")) // response header/query keys
+	styleJSONKeyResp = lipgloss.NewStyle().Foreground(lipgloss.Color("213")) // response JSON object keys
 )
 
 // WS-018 / UXR-013 — inspect formatting constants.
@@ -39,7 +65,8 @@ const (
 	maxInspectBodyLines = 40
 	maxInspectJSONBytes = 262576
 	// maxRenderedHeaders caps header/query line counts in both detailLines
-	// (UXR-008) and inspectLines (UXR-013) — attacker-controlled maps (a
+	// (UXR-008 request headers/query and the UXR-016 response headers block in
+	// detailLines) and inspectLines (UXR-013) — attacker-controlled maps (a
 	// client can send hundreds of headers) must not inflate the feed block
 	// or feedLineToEntry without bound.
 	maxRenderedHeaders = 30
@@ -619,28 +646,35 @@ func (m Model) summaryLine(e mock.LogEntry, sel bool) string {
 
 // detailLines returns the expanded-detail lines for a log entry. The gutter is
 // "  │ " and keys are sorted for determinism. Every line is truncated to
-// m.view.Width and rendered in the muted style. Request headers and query
-// params are each capped at maxRenderedHeaders with a "(N more ...)" marker
-// (attacker-controlled maps must not inflate this block unbounded).
+// m.view.Width and rendered with UXR-015 segment-wise styling (cyan-bold
+// labels, cyan header/query keys, yellow request body). Request headers and
+// query params are each capped at maxRenderedHeaders with a "(N more ...)"
+// marker (attacker-controlled maps must not inflate this block unbounded).
 func (m Model) detailLines(e mock.LogEntry) []string {
-	var plain []string
+	const gutterWidth = 4
+	contentW := m.view.Width - gutterWidth
+	if contentW < 1 {
+		contentW = 1
+	}
+
+	var lines []styledLine
 
 	// Fixed fields.
-	plain = append(plain, fmt.Sprintf("%-12s %s", "request_id:", e.RequestID))
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "request_id:", e.RequestID), kind: kindFixed})
 	matched := "false"
 	if e.Matched {
 		matched = "true"
 	}
-	plain = append(plain, fmt.Sprintf("%-12s %s", "matched:", matched))
-	plain = append(plain, fmt.Sprintf("%-12s %s", "timestamp:", e.Timestamp))
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "matched:", matched), kind: kindFixed})
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "timestamp:", e.Timestamp), kind: kindFixed})
 
 	// Headers block. Capped at maxRenderedHeaders — request headers are
 	// attacker-controlled (a client can send hundreds) and must not inflate
 	// this block or feedLineToEntry without bound.
 	if len(e.Headers) == 0 {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "headers:", "(none)"), kind: kindMuted})
 	} else {
-		plain = append(plain, "headers:")
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s", "headers:"), kind: kindBlockHead})
 		keys := make([]string, 0, len(e.Headers))
 		for k := range e.Headers {
 			keys = append(keys, k)
@@ -649,10 +683,10 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 		count := 0
 		for _, k := range keys {
 			if count >= maxRenderedHeaders {
-				plain = append(plain, fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders))
+				lines = append(lines, styledLine{plain: fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders), kind: kindMuted})
 				break
 			}
-			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])))
+			lines = append(lines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])), kind: kindKV})
 			count++
 		}
 	}
@@ -660,9 +694,9 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 	// Query block. Same cap/rationale as headers — query params are equally
 	// attacker-controlled.
 	if len(e.Query) == 0 {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "query:", "(none)"))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "query:", "(none)"), kind: kindMuted})
 	} else {
-		plain = append(plain, "query:")
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s", "query:"), kind: kindBlockHead})
 		keys := make([]string, 0, len(e.Query))
 		for k := range e.Query {
 			keys = append(keys, k)
@@ -671,29 +705,82 @@ func (m Model) detailLines(e mock.LogEntry) []string {
 		count := 0
 		for _, k := range keys {
 			if count >= maxRenderedHeaders {
-				plain = append(plain, fmt.Sprintf("  (%d more query)", len(keys)-maxRenderedHeaders))
+				lines = append(lines, styledLine{plain: fmt.Sprintf("  (%d more query)", len(keys)-maxRenderedHeaders), kind: kindMuted})
 				break
 			}
-			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])))
+			lines = append(lines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])), kind: kindKV})
 			count++
 		}
 	}
 
-	// Body (always one line — sanitize turns \n into spaces).
+	// Body — always one line (sanitize turns newlines into spaces); yellow
+	// tint, no JSON highlighting here.
 	if e.Body == "" {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "request body:", "(empty)"), kind: kindMuted})
 	} else {
 		body := sanitize(e.Body)
-		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", body))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "request body:", body), kind: kindBodyReq})
 	}
 
-	// Apply gutter, truncation, and muted style to each line.
-	// gutterWidth is the visible width of "  │ " (2 spaces + box char + space = 4).
-	const gutterWidth = 4
-	result := make([]string, len(plain))
-	for i, line := range plain {
-		truncated := truncPlain(line, m.view.Width-gutterWidth)
-		result[i] = styleMuted.Render("  │ " + truncated)
+	// UXR-017 — separator: a muted full-width ─ rule closing the request
+	// section, directly before the RESPONSE header. Rendered via kindMuted
+	// (muted foreground, detail gutter) on the request band.
+	lines = append(lines, styledLine{plain: strings.Repeat("─", contentW), kind: kindMuted})
+
+	// --- RESPONSE section (UXR-016) ---
+	// Mirrors the inspector's RESPONSE block (inspectLines render.go:872–927)
+	// byte-for-byte: same construction and assembly. UXR-017 adds the
+	// separator above and bands this whole section (22) via the assembly.
+
+	// Build RESPONSE header with status tint (segment-wise, gutter inside the
+	// section style). This line is pre-styled because it carries TWO styles
+	// (section bold-240 + status tint) and its width-overflow degradation is
+	// decided on the STYLED line — neither fits the styledLine pipeline. The
+	// pre-existing styled-string truncation exception applies (truncated to
+	// m.view.Width, not contentW, because the gutter is inside the style).
+	respHead := styleSection.Render(detailGutter+fmt.Sprintf("%-14s", "RESPONSE")) + tint(e.ResponseStatus)
+	if lipgloss.Width(respHead) > m.view.Width {
+		// Degraded: width overflow, render untinted.
+		respHead = styleMuted.Render(detailGutter + fmt.Sprintf("%-14s %d", "RESPONSE", e.ResponseStatus))
+	}
+
+	var respLines []styledLine
+	// Variant index — only when the endpoint used weighted/round-robin
+	// variants (nil renders nothing).
+	if e.ResponseVariant != nil {
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s %d", "variant:", *e.ResponseVariant), kind: kindFixed})
+	}
+	if len(e.ResponseHeaders) == 0 {
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s %s", "headers:", "(none)"), kind: kindMuted})
+	} else {
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s", "headers:"), kind: kindBlockHead})
+		keys := make([]string, 0, len(e.ResponseHeaders))
+		for k := range e.ResponseHeaders {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		count := 0
+		for _, k := range keys {
+			if count >= maxRenderedHeaders {
+				respLines = append(respLines, styledLine{plain: fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders), kind: kindMuted})
+				break
+			}
+			respLines = append(respLines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.ResponseHeaders[k])), kind: kindKVResp})
+			count++
+		}
+	}
+	appendBodyBlock(&respLines, "response body:", e.ResponseBody, false)
+
+	// Assemble: styled request lines, RESPONSE header (pre-styled), styled
+	// response lines — identical assembly to inspectLines. UXR-017 bands each
+	// section full-width (REQUEST 236 / RESPONSE 22).
+	result := make([]string, 0, len(lines)+1+len(respLines))
+	for _, sl := range lines {
+		result = append(result, band(renderStyledLine(sl, contentW), lipgloss.Color(sectionReqBG), m.view.Width))
+	}
+	result = append(result, band(truncPlain(respHead, m.view.Width), lipgloss.Color(sectionRespBG), m.view.Width))
+	for _, sl := range respLines {
+		result = append(result, band(renderStyledLine(sl, contentW), lipgloss.Color(sectionRespBG), m.view.Width))
 	}
 	return result
 }
@@ -782,39 +869,41 @@ func plainBody(raw string, maxBytes, maxLines int) []string {
 // inspectLines returns the inspector-detail lines for a log entry. The gutter
 // is "  │ " (gutterWidth=4). Keys are sorted for determinism. Includes both
 // request and response sections. Every returned line is guaranteed to contain
-// no \n characters (line-to-entry mapping invariant).
+// no newline characters (line-to-entry mapping invariant).
 func (m Model) inspectLines(e mock.LogEntry) []string {
 	const gutterWidth = 4
-	gutter := styleMuted.Render("  │ ")
 	contentW := m.view.Width - gutterWidth
 	if contentW < 1 {
 		contentW = 1
 	}
 
-	var plain []string
+	var lines []styledLine
 
 	// --- REQUEST section ---
+	// Section header (cyan bold, mirrors RESPONSE minus the status tint).
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s", "REQUEST"), kind: kindReqHeader})
+
 	// Fixed fields.
-	plain = append(plain, fmt.Sprintf("%-12s %s %s", "request:", sanitize(e.Method), sanitize(e.Path)))
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s %s", "request:", sanitize(e.Method), sanitize(e.Path)), kind: kindFixed})
 	webhook := e.Webhook
 	if webhook == "" {
 		webhook = "unmatched"
 	}
-	plain = append(plain, fmt.Sprintf("%-12s %s", "endpoint:", sanitize(webhook)))
-	plain = append(plain, fmt.Sprintf("%-12s %s", "request_id:", e.RequestID))
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "endpoint:", sanitize(webhook)), kind: kindFixed})
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "request_id:", e.RequestID), kind: kindFixed})
 	matched := "false"
 	if e.Matched {
 		matched = "true"
 	}
-	plain = append(plain, fmt.Sprintf("%-12s %s", "matched:", matched))
-	plain = append(plain, fmt.Sprintf("%-12s %s", "timestamp:", e.Timestamp))
-	plain = append(plain, fmt.Sprintf("%-12s %.1fms", "latency:", e.LatencyMs))
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "matched:", matched), kind: kindFixed})
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "timestamp:", e.Timestamp), kind: kindFixed})
+	lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %.1fms", "latency:", e.LatencyMs), kind: kindFixed})
 
 	// Request headers block.
 	if len(e.Headers) == 0 {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "headers:", "(none)"), kind: kindMuted})
 	} else {
-		plain = append(plain, "headers:")
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s", "headers:"), kind: kindBlockHead})
 		keys := make([]string, 0, len(e.Headers))
 		for k := range e.Headers {
 			keys = append(keys, k)
@@ -823,63 +912,57 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 		count := 0
 		for _, k := range keys {
 			if count >= maxRenderedHeaders {
-				plain = append(plain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders)))
+				lines = append(lines, styledLine{plain: fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders), kind: kindMuted})
 				break
 			}
-			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])))
+			lines = append(lines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Headers[k])), kind: kindKV})
 			count++
 		}
 	}
 
 	// Query block.
 	if len(e.Query) == 0 {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "query:", "(none)"))
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s %s", "query:", "(none)"), kind: kindMuted})
 	} else {
-		plain = append(plain, "query:")
+		lines = append(lines, styledLine{plain: fmt.Sprintf("%-14s", "query:"), kind: kindBlockHead})
 		keys := make([]string, 0, len(e.Query))
 		for k := range e.Query {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			plain = append(plain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])))
+			lines = append(lines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.Query[k])), kind: kindKV})
 		}
 	}
 
-	// Request body.
-	if e.Body == "" {
-		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
-	} else {
-		body := sanitize(e.Body)
-		plain = append(plain, fmt.Sprintf("%-12s %s", "body:", body))
-	}
+	// Request body — routed through formatBody (multi-line, stakeholder
+	// decision 2) so it receives the same highlighting as the response body.
+	appendBodyBlock(&lines, "request body:", e.Body, true)
+
+	// UXR-017 — separator: a muted full-width ─ rule closing the request
+	// section, directly before the RESPONSE header.
+	lines = append(lines, styledLine{plain: strings.Repeat("─", contentW), kind: kindMuted})
 
 	// --- RESPONSE section ---
 
-	// Build RESPONSE section header with status tint (segment-wise).
-	respHead := styleSection.Render(gutter+fmt.Sprintf("%-12s", "RESPONSE")) + tint(e.ResponseStatus)
+	// Build RESPONSE section header with status tint (segment-wise, unchanged).
+	respHead := styleSection.Render(detailGutter+fmt.Sprintf("%-14s", "RESPONSE")) + tint(e.ResponseStatus)
 	if lipgloss.Width(respHead) > m.view.Width {
 		// Degraded: width overflow, render untinted.
-		respHead = styleMuted.Render(gutter + fmt.Sprintf("%-12s %d", "RESPONSE", e.ResponseStatus))
+		respHead = styleMuted.Render(detailGutter + fmt.Sprintf("%-14s %d", "RESPONSE", e.ResponseStatus))
 	}
-	// respHead is already styled, put it directly into the result.
 
-	// For plain lines we'll build them and then apply gutter/mute at the end.
-	// But respHead bypasses the normal gutter application since it has a tinted
-	// segment. We handle it specially.
-
-	// Response headers block.
-	var respPlain []string
+	var respLines []styledLine
 	// Variant index (backlog: response-variant-index) — only shown when the
 	// endpoint used a weighted/round-robin Responses slice; nil (singular
 	// Response, no variants configured) renders nothing here.
 	if e.ResponseVariant != nil {
-		respPlain = append(respPlain, fmt.Sprintf("%-12s %d", "variant:", *e.ResponseVariant))
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s %d", "variant:", *e.ResponseVariant), kind: kindFixed})
 	}
 	if len(e.ResponseHeaders) == 0 {
-		respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "headers:", "(none)"))
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s %s", "headers:", "(none)"), kind: kindMuted})
 	} else {
-		respPlain = append(respPlain, "headers:")
+		respLines = append(respLines, styledLine{plain: fmt.Sprintf("%-14s", "headers:"), kind: kindBlockHead})
 		keys := make([]string, 0, len(e.ResponseHeaders))
 		for k := range e.ResponseHeaders {
 			keys = append(keys, k)
@@ -888,45 +971,32 @@ func (m Model) inspectLines(e mock.LogEntry) []string {
 		count := 0
 		for _, k := range keys {
 			if count >= maxRenderedHeaders {
-				respPlain = append(respPlain, styleMuted.Render(fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders)))
+				respLines = append(respLines, styledLine{plain: fmt.Sprintf("  (%d more headers)", len(keys)-maxRenderedHeaders), kind: kindMuted})
 				break
 			}
-			respPlain = append(respPlain, fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.ResponseHeaders[k])))
+			respLines = append(respLines, styledLine{plain: fmt.Sprintf("  %s: %s", sanitize(k), sanitize(e.ResponseHeaders[k])), kind: kindKVResp})
 			count++
 		}
 	}
 
 	// Response body.
-	var bodyLines []string
-	if e.ResponseBody == "" {
-		respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
-	} else {
-		bodyLines = formatBody(e.ResponseBody)
-		if len(bodyLines) == 0 {
-			respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", "(empty)"))
-		} else {
-			firstLine := bodyLines[0]
-			respPlain = append(respPlain, fmt.Sprintf("%-12s %s", "body:", firstLine))
-			for i := 1; i < len(bodyLines); i++ {
-				respPlain = append(respPlain, fmt.Sprintf("  %s", bodyLines[i]))
-			}
-		}
+	appendBodyBlock(&respLines, "response body:", e.ResponseBody, false)
+
+	// Assemble result: styled request lines, RESPONSE header (pre-styled),
+	// styled response lines. UXR-017 bands each section full-width (REQUEST
+	// 236 / RESPONSE 22).
+	result := make([]string, 0, len(lines)+1+len(respLines))
+
+	for _, sl := range lines {
+		result = append(result, band(renderStyledLine(sl, contentW), lipgloss.Color(sectionReqBG), m.view.Width))
 	}
 
-	// Assemble result: plain request lines (with gutter), RESPONSE header (pre-styled), response lines (with gutter).
-	result := make([]string, 0, len(plain)+1+len(respPlain))
+	// RESPONSE section header (already styled; truncated on the styled string
+	// as before — pre-existing special case, not part of the plain pipeline).
+	result = append(result, band(truncPlain(respHead, m.view.Width), lipgloss.Color(sectionRespBG), m.view.Width))
 
-	for _, line := range plain {
-		truncated := truncPlain(line, contentW)
-		result = append(result, styleMuted.Render("  │ "+truncated))
-	}
-
-	// RESPONSE section header (already styled).
-	result = append(result, truncPlain(respHead, m.view.Width))
-
-	for _, line := range respPlain {
-		truncated := truncPlain(line, contentW)
-		result = append(result, styleMuted.Render("  │ "+truncated))
+	for _, sl := range respLines {
+		result = append(result, band(renderStyledLine(sl, contentW), lipgloss.Color(sectionRespBG), m.view.Width))
 	}
 
 	return result

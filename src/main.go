@@ -20,6 +20,11 @@ import (
 	"simuhook/mock"
 )
 
+// version is the release version, injected at build time via
+// `go build -ldflags "-X main.version=v0.1.0"`. "dev" is the default when
+// building without ldflags (e.g. `go run .`).
+var version = "dev"
+
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	stubsDir := flag.String("stubs", "../stubs", "stubs directory")
@@ -27,7 +32,13 @@ func main() {
 	tui := flag.String("tui", "auto", "dashboard mode: auto|on|off")
 	recent := flag.Int("recent", 50, "recent log ring buffer size")
 	maxLogBody := flag.Int("max-log-body", 0, "cap stored request/response body size in bytes for logs and dashboard (0 = unlimited)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("simuhook %s\n", version)
+		return
+	}
 
 	if *tui != "auto" && *tui != "on" && *tui != "off" {
 		log.Fatalf("invalid --tui value %q: must be auto, on, or off", *tui)

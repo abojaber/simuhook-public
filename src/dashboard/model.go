@@ -692,7 +692,7 @@ func (m *Model) renderFeed() {
 }
 
 // headerHeight returns the number of rows the header occupies: the title,
-// the config lines (address/stubs/log-dir/admin), the stats line, and the
+// the config lines (address/stubs/log-dir), the stats line, and the
 // endpoints panel. When showEndpoints is false, the panel is collapsed to a
 // single heading line; when true and endpoints exist, the full list is shown.
 // UNCHANGED — narrow layout depends on this byte-identically.

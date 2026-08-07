@@ -281,11 +281,11 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
    **Resolved 2026-08-05 (stakeholder): no authentication required.** Simuhook is a dev-only
    tool; `--addr :8080` binding is an accepted posture. Not a reintroduction requirement.
 
-**Dependencies for removal:** code deletion (admin.go, admin_test.go, mux mounts, banner line,
-dashboard admin URL lines + 2 dashboard tests) is a Developer task tracked as **ADM-002** —
-decision made 2026-08-05, **code deletion still pending** in the working tree (as of 2026-08-06;
-docs already updated). The stale admin URL strings are reported separately as **ADM-003**
-(`.ai/requirements/13-admin-url-residue.md`, severity Low) and are fixed as part of ADM-002.
+**Dependencies for removal:** code deletion executed **2026-08-06 (ADM-002)** — `src/mock/admin.go`
++ `admin_test.go` deleted, mux mounts + banner line removed, dashboard admin URL strings removed
+(ADM-003, `.ai/requirements/13-admin-url-residue.md`, QA-verified 2026-08-07). Endpoint
+management is file-based only (YAML + hot-reload watcher); `/_admin/endpoints` now falls
+through to the mock handler like any unmatched request (404 + logged as unmatched).
 
 ---
 

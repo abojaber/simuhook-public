@@ -2,6 +2,24 @@
 
 ## Current Session
 
+### 2026-08-07 — Admin API fully removed (ADM-002/ADM-003) + TUI reference doc
+
+- **ADM-002 executed — admin code deleted from the tree.** `src/mock/admin.go` +
+  `admin_test.go` deleted (749 lines), admin mux mounts + banner line removed from
+  `src/main.go`, dashboard admin URL stripped (`renderInfoDetail` → `Log dir: …` only,
+  `renderHeader` collapsed, no more `<80`/`>=80` split). `/_admin/endpoints` now 404s and
+  logs as unmatched like any unknown path.
+- **ADM-003 (stale admin URL residue, Low) fixed + verified.** All three surfaces (wide info
+  line, narrow config line, banner) admin-free. `TestRenderConfigNarrow` rewritten as a
+  no-admin regression guard. QA: AC1-AC4 PASS, 302/302 tests, race + vet + gofmt clean,
+  `rg` zero hits in `src/`, PTY-verified. 0 blockers. (One Low comment residue at
+  `model.go:695` fixed by BA; three non-blocking test-gap follow-ups tracked in
+  `13-admin-url-residue.md`.)
+- **TUI developer reference committed** (`7009e27`): `.ai/tui-dashboard-reference.md` —
+  code-verified contract of the shipped dashboard (layouts, chrome, panels, states,
+  selection model, keys, code map). `ui-ux-dashboard.md` now banners itself as the v-next
+  draft deferring to the reference.
+
 ### 2026-08-06 — DASH-001 gap closures D1/D2/D4/D7 implemented + verified
 
 - **All four code closures from the 2026-08-05 sign-off landed and passed QA (0 bugs).**

@@ -1,6 +1,6 @@
 # ADM-003 — Stale admin API URL still rendered in TUI + banner (admin URL residue)
 
-Requirement file owner: BA. Status: `open` (severity Low, 2026-08-06; fix folded into ADM-002). Phase: cleanup/bugfix.
+Requirement file owner: BA. Status: `verified` (fixed as part of ADM-002 2026-08-06; QA verified 2026-08-07 — AC1-AC4 PASS, 0 blockers). Phase: cleanup/bugfix.
 
 ## 0. Origin
 
@@ -69,4 +69,12 @@ AC4 — Given the full test suite
 
 - 2026-08-06: found during layout audit; reported by BA; severity Low confirmed by
   stakeholder; recorded here. Fix tracked as part of **ADM-002** (admin code deletion).
-  Story status → `open`, moves to `in-progress` when ADM-002 is implemented.
+- 2026-08-06: fixed by Developer as part of ADM-002 — `renderInfoDetail` → `Log dir: %s`
+  only; `renderHeader` config line collapsed (no admin); banner line removed; tests updated
+  (`TestRenderConfigNarrow` rewritten as a no-admin regression guard).
+- 2026-08-07: QA verified — **AC1-AC4 PASS** (302/302 suite, race + vet + gofmt clean,
+  `rg` zero hits in `src/`, PTY-verified wide 120×24 + narrow 80×24 + banner). Status → `verified`.
+- **Non-blocking coverage gaps (QA, 2026-08-07):** (1) AC1 banner has no unit test (no
+  `main_test.go`); (2) AC2 wide info line has no direct unit assertion; (3) no automated test
+  that `/_admin/endpoints` now falls through to the mock handler (404 + `matched:false`).
+  Recommended as small follow-up tests; not blocking.

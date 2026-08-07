@@ -716,7 +716,6 @@ func TestModelHeaderConfig(t *testing.T) {
 		"Address: :8080",
 		"Stubs: ../stubs (2 files)",
 		"Log dir: logs",
-		"http://localhost:8080/_admin/endpoints",
 		"Endpoints:",
 		"/ping → ping",
 		"/webhooks/order → orders",
@@ -732,7 +731,7 @@ func TestModelHeaderEndpointRefresh(t *testing.T) {
 	eps := &fakeEndpoints{eps: []*mock.Endpoint{{ID: "a", Method: "GET", Path: "/a"}}}
 	m := newModel(src, eps, Config{}, 80, 24)
 
-	// Endpoint added at runtime (admin API) — tick must pick it up.
+	// Endpoint added at runtime (file watcher hot-reload) — tick must pick it up.
 	eps.eps = append(eps.eps, &mock.Endpoint{ID: "b", Method: "POST", Path: "/b"})
 	m2, _ := m.Update(tickMsg(time.Now()))
 	mm := m2.(Model)
@@ -1489,6 +1488,13 @@ func TestLayoutResizeUserChoicePreserved(t *testing.T) {
 	}
 }
 
+// TestRenderConfigNarrow guards that the narrow-layout config line never
+// regresses into advertising the removed admin API (ADM-002/ADM-003). The
+// config line is width-independent now (no admin URL at any width) — both 80
+// and 79 fall in the narrow layout (< 100), and both must render Address/Stubs/
+// Log dir without any admin residue. The old admin segment always rendered with
+// an "Admin:" label, so that label is the regression guard (kept deliberately
+// distinct from the removed route string so the tree has zero admin references).
 func TestRenderConfigNarrow(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 	eps := &fakeEndpoints{
@@ -1498,29 +1504,21 @@ func TestRenderConfigNarrow(t *testing.T) {
 	}
 	cfg := Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}
 
-	// Width 80 — Admin URL present (80 is not < 80).
-	m := newModel(src, eps, cfg, 80, 24)
-	m.last = src.snap
-	view := m.View()
-	if !strings.Contains(view, "Admin: http://localhost:8080/_admin/endpoints") {
-		t.Error("expected Admin URL at width 80")
-	}
-
-	// Width 79 — Admin URL absent.
-	m2 := newModel(src, eps, cfg, 79, 24)
-	m2.last = src.snap
-	view2 := m2.View()
-	if strings.Contains(view2, "Admin:") {
-		t.Error("expected NO Admin URL at width 79")
-	}
-	// But the other segments still present.
-	for _, want := range []string{
-		"Address: :8080",
-		"Stubs: ../stubs",
-		"Log dir: logs",
-	} {
-		if !strings.Contains(view2, want) {
-			t.Errorf("expected %q in narrow config line", want)
+	for _, width := range []int{80, 79} {
+		m := newModel(src, eps, cfg, width, 24)
+		m.last = src.snap
+		view := m.View()
+		if strings.Contains(view, "Admin:") {
+			t.Errorf("width %d: config line must NOT contain the removed admin API URL", width)
+		}
+		for _, want := range []string{
+			"Address: :8080",
+			"Stubs: ../stubs",
+			"Log dir: logs",
+		} {
+			if !strings.Contains(view, want) {
+				t.Errorf("width %d: expected %q in config line", width, want)
+			}
 		}
 	}
 }

@@ -342,10 +342,9 @@ func (m Model) renderServerInfo(w int) string {
 	return styleMuted.Render("SERVER INFO  ") + strings.Join(chips, "  ")
 }
 
-// renderInfoDetail builds the log-dir + admin URL line.
+// renderInfoDetail builds the log-dir line.
 func (m Model) renderInfoDetail(w int) string {
-	adminURL := "http://localhost" + m.cfg.Addr + "/_admin/endpoints"
-	return styleMuted.Render(fmt.Sprintf("Log dir: %s   Admin: %s", m.cfg.LogDir, adminURL))
+	return styleMuted.Render(fmt.Sprintf("Log dir: %s", m.cfg.LogDir))
 }
 
 // renderMetrics builds the METRICS & LATENCY chip row.
@@ -436,17 +435,8 @@ func (m Model) renderHeader() string {
 	title := styleHeader.Render("Simuhook Dashboard")
 
 	// Config line (from startup banner).
-	adminURL := "http://localhost" + m.cfg.Addr + "/_admin/endpoints"
-
-	var configLine string
-	if m.width < 80 {
-		// UXR-005 — narrow terminals: drop Admin URL.
-		configLine = fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s",
-			m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir)
-	} else {
-		configLine = fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s  Admin: %s",
-			m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir, adminURL)
-	}
+	configLine := fmt.Sprintf("Address: %s  Stubs: %s (%d files)  Log dir: %s",
+		m.cfg.Addr, m.cfg.StubsDir, len(m.endpoints), m.cfg.LogDir)
 	config := styleMuted.Render(configLine)
 
 	// Stats line

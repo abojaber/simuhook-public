@@ -126,7 +126,6 @@ func main() {
 			fmt.Sprintf("  Address:    %s", *addr),
 			fmt.Sprintf("  Stubs:      %s (%d files)", *stubsDir, len(eps)),
 			fmt.Sprintf("  Log dir:    %s", *logDir),
-			fmt.Sprintf("  Admin API:  http://localhost%s/_admin/endpoints", *addr),
 		}
 		for _, l := range configLines {
 			if len(l)+2 > boxWidth {
@@ -167,11 +166,6 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-
-	// Admin endpoints (control plane — not matched against stubs, not logged).
-	admin := mock.NewAdminHandler(registry)
-	mux.Handle(mock.AdminEndpointsPath, admin)     // collection
-	mux.Handle(mock.AdminEndpointsPath+"/", admin) // item: /{id}
 
 	// Webhook handler — matched & unmatched requests are logged
 	observers := []func(mock.LogEntry){

@@ -104,3 +104,31 @@ All four WS-018/pre-existing backlog items (`detaillines-header-cap`, `max-log-b
   - **Remaining open:** ADM-002 (admin.go deletion, decision made, code removal still pending
     in the tree); DASH-003/005/006 docs done (BA); D6 backlog item awaits policy confirmation.
     Non-blocking D2 AC3/AC4 test gaps tracked as follow-ups.
+
+## 2026-08-07
+
+- **ADM-002 executed + ADM-003 verified — admin API fully removed from the codebase.**
+  - **ADM-002 (code deletion):** `src/mock/admin.go` + `src/mock/admin_test.go` deleted
+    (749 lines); admin mux mounts + banner line removed from `src/main.go`; stale admin URL
+    stripped from the dashboard (`renderInfoDetail` → `Log dir: %s` only, `renderHeader`
+    config line collapsed — the `<80`/`>=80` split is gone). No unused imports.
+  - **ADM-003 (stale admin URL residue, severity Low):** fixed by the same pass — banner,
+    wide info line, narrow config line all admin-free. `TestRenderConfigNarrow` rewritten as
+    a no-admin regression guard; one stale "admin API" comment updated
+    (`TestModelHeaderEndpointRefresh`); BA also fixed the `headerHeight` comment
+    (`model.go`, "address/stubs/log-dir" without admin) and `architecture.md` ("muted
+    log-dir line").
+  - **QA verified 2026-08-07:** ADM-003 AC1-AC4 PASS + all ADM-002 scope checks; **302/302
+    tests** (dashboard 280, mock 22), `-race` clean, `go vet` clean, `gofmt -l` empty,
+    `rg "_admin|AdminEndpointsPath|NewAdminHandler|adminHandler" src/` → **zero hits**,
+    PTY-verified wide 120×24 + narrow 80×24 + `--tui off` banner. Wire: `/_admin/endpoints`
+    now 404s and logs as unmatched like any unknown path. 0 blockers.
+  - **Non-blocking coverage gaps (QA, tracked in `13-admin-url-residue.md`):** no unit test
+    for the banner (no `main_test.go`), no direct wide-info-line unit assertion, and no
+    automated "admin path falls through to unmatched 404" test.
+  - **TUI developer reference added** (`.ai/tui-dashboard-reference.md`, commit `7009e27`) —
+    the code-verified contract of the shipped dashboard; `ui-ux-dashboard.md` banner now
+    marks it as the v-next draft and defers to the reference.
+  - **Layout audit → ADM-003:** the audit that found the residue also confirmed the current
+    layout contract (header/footer/content two-column, help overlay, filter prompt, row
+    expansion, inspector — all documented in the reference).

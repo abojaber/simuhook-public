@@ -192,7 +192,7 @@ All four WS-018/pre-existing backlog items (`detaillines-header-cap`, `max-log-b
     exception is unchanged. UXR-016 no-refactor duplication preserved — both assembly
     sites changed identically; `model.go` untouched (mapping already dynamic). Selection
     band/feed rows byte-identical to HEAD (AC6). Line counts +1 (empty 9→10, mapped
-    12→13, lineToEntry 15→16). QA: **11/11 ACs PASS**, 358 tests (dashboard 234, mock
+    12→13, lineToEntry 15→16). QA: **11/11 ACs PASS**, 343 tests (dashboard 234, mock
     124), `-race` clean, vet/gofmt clean. Docs: ADR + TUI reference updated. Notes:
     `styleSectionReq`/`styleSectionResp` declared but unused (package-level vars, legal);
     dev report said "8 TestHighlightJSON_*" — actually 7 (cosmetic).

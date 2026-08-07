@@ -1,3 +1,4 @@
 .blackboxcli/
 simuhook
 logs/
+dist/

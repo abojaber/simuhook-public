@@ -39,7 +39,7 @@
   would lose the band at the first inner reset (UXR-008 segment-wise lesson); the ANSI
   surgery is safe because `sanitize()` strips every user ESC before styling. Selection
   band/feed rows byte-identical (AC6). QA 11/11 ACs.
-- **QA totals:** 358 tests (dashboard 234, mock 124), `-race` clean, `go vet` + `gofmt`
+- **QA totals:** 343 tests (dashboard 234, mock 109), `-race` clean, `go vet` + `gofmt`
   clean, no defects across all three stories.
 - **Release prep (v0.1.0):**
   - **`--version` flag added** (`src/main.go`): `var version = "dev"`, injected via

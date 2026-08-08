@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -1122,21 +1123,26 @@ func TestModelLiveFollowResumeOnScrollToBottom(t *testing.T) {
 		t.Fatal("expected paused")
 	}
 
-	// Scroll up to leave the bottom.
+	// Move the cursor up to leave the bottom.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m2 = updated.(Model)
-	if m2.view.AtBottom() {
-		t.Fatal("expected not-at-bottom after scrolling up")
-	}
 
-	// Now scroll back down to bottom — should resume live-follow.
+	// UXR-018 (AC8, decision 2) — moving the cursor back down to the bottom
+	// must NOT silently resume live-follow.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m2 = updated.(Model)
+	if m2.liveFollow {
+		t.Error("expected liveFollow to stay false after the cursor reaches the bottom")
+	}
+
+	// Explicit L resumes and re-anchors to the bottom.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m2 = updated.(Model)
 	if !m2.liveFollow {
-		t.Error("expected liveFollow=true after scrolling back to bottom")
+		t.Error("expected liveFollow=true after explicit L")
 	}
 	if !m2.view.AtBottom() {
-		t.Error("expected at-bottom after scrolling down")
+		t.Error("expected at-bottom after resume")
 	}
 }
 
@@ -2086,14 +2092,13 @@ func TestModelExpandOnlyOneAtATime(t *testing.T) {
 	m.liveFollow = false
 	m.renderFeed()
 
-	// Scroll so row k (index 3) is at top.
-	lineK := m.feedEntryToLine[3]
-	m.view.SetYOffset(lineK)
+	// UXR-018 — move the cursor to row k (index 3), then press enter. The
+	// viewport offset no longer derives the selection (AC7).
+	m.sel = 3
 
 	selectedBefore := m.selectedIdx()
 	if selectedBefore != 3 {
-		t.Fatalf("expected selectedIdx=3, got %d (YOffset=%d, lineK=%d)",
-			selectedBefore, m.view.YOffset, lineK)
+		t.Fatalf("expected selectedIdx=3, got %d", selectedBefore)
 	}
 
 	// Press enter on row k.
@@ -2512,19 +2517,31 @@ func TestFeedSelectedIdxBounds(t *testing.T) {
 		t.Errorf("expected -1 for nil maps (expandedSummaryLine), got %d", m.expandedSummaryLine())
 	}
 
-	// Normal feed — YOffset points to a trailing blank (-1 entry) but viewport
-	// clamps to maxYOffset. Since the feed has few entries, maxYOffset is 0
-	// and we always point to a valid entry. Cover the code path by testing
-	// that selectedIdx returns >= 0 for valid YOffset values.
+	// UXR-018 — the cursor (sel) is the single source of truth; the viewport
+	// offset never derives the selection (AC7). Initial cursor is 0; scrolling
+	// the viewport does not move it; moving the cursor moves the selection.
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
 	m = newModel(src, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
-	// YOffset=0 should be the first entry.
+	// Initial cursor is the first entry.
 	if m.selectedIdx() != 0 {
-		t.Errorf("expected selectedIdx=0 at YOffset=0, got %d", m.selectedIdx())
+		t.Errorf("expected selectedIdx=0 (initial cursor), got %d", m.selectedIdx())
+	}
+
+	// Scrolling the viewport must NOT change the selection (AC7).
+	m.view.SetYOffset(1)
+	if got := m.selectedIdx(); got != 0 {
+		t.Errorf("expected selectedIdx=0 after SetYOffset (offset no longer derives selection), got %d", got)
+	}
+
+	// Moving the cursor moves the selection; the viewport follows only via
+	// ensureSelectedVisible on navigation keys.
+	m.sel = 2
+	if got := m.selectedIdx(); got != 2 {
+		t.Errorf("expected selectedIdx=2 after moving the cursor, got %d", got)
 	}
 }
 
@@ -2820,13 +2837,12 @@ func TestModelExpandPinsSummaryToTop(t *testing.T) {
 	m.last = src.snap
 	m.renderFeed()
 
-	// Scroll entry 10 to the top.
-	lineK := m.feedEntryToLine[10]
-	m.view.SetYOffset(lineK)
+	// UXR-018 — the cursor is the source of truth (AC7): select entry 10
+	// directly instead of scrolling it to the top line.
+	m.sel = 10
 
 	if m.selectedIdx() != 10 {
-		t.Fatalf("expected selectedIdx=10, got %d (YOffset=%d, lineK=%d)",
-			m.selectedIdx(), m.view.YOffset, lineK)
+		t.Fatalf("expected selectedIdx=10, got %d", m.selectedIdx())
 	}
 
 	// Press enter — should expand entry 10 and pin its summary to top.
@@ -3742,18 +3758,25 @@ func TestRenderPauseButtonResumesOnScrollBottom(t *testing.T) {
 		t.Fatal("expected liveFollow=false")
 	}
 
-	// Scroll up (away from bottom).
+	// Move the cursor up (away from the bottom).
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = updated.(Model)
 
-	// Scroll down — AtBottom triggers resume.
+	// Move the cursor back to the bottom — UXR-018 (AC8): cursor movement
+	// alone must NOT resume live-follow, so the pause button stays Resume.
 	for i := 0; i < 50; i++ {
 		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = updated.(Model)
 	}
 
-	if !m.liveFollow {
-		t.Error("expected liveFollow=true after scrolling to bottom")
+	if m.liveFollow {
+		t.Error("expected liveFollow to stay false — cursor movement must not resume")
+	}
+	if !m.view.AtBottom() {
+		t.Error("expected cursor at the bottom of the feed")
+	}
+	if strings.Contains(m.renderPauseButton(), "Pause Stream") {
+		t.Error("expected [ Resume Stream ] (not [ Pause Stream ]) while paused")
 	}
 }
 
@@ -5033,27 +5056,26 @@ func TestModelInspectOpenDismiss(t *testing.T) {
 
 func TestModelInspectDismissWithLivePaused(t *testing.T) {
 	// Use many entries so the viewport has scrollable content and AtBottom
-	// is not always true. Entry count must exceed viewport height to have
-	// scrollable content.
+	// is not always true.
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
 	m := newModel(src, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
-	// Goto bottom, then scroll up, so we're not at bottom.
-	m.view.GotoBottom()
-	for i := 0; i < 10; i++ {
-		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
-		m = updated.(Model)
-	}
+	// UXR-018 — park the cursor mid-feed (entry 5) so we're not at the
+	// bottom. ensureSelectedVisible keeps it on-screen without scrolling to
+	// the live edge.
+	m.sel = 5
+	m.selTouched = true
+	m.ensureSelectedVisible()
 	if m.view.AtBottom() {
-		t.Fatal("expected not at bottom after scrolling up")
+		t.Fatal("expected not at bottom after parking the cursor mid-feed")
 	}
 
 	// Pause live, expand, then open inspect.
 	m.liveFollow = false
-	m.expandedID = "req-0"
+	m.expandedID = "req-5"
 	m.renderFeed()
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
@@ -5856,9 +5878,9 @@ func TestModelFitsSelection_NoSilentLiveFollowResume(t *testing.T) {
 }
 
 func TestModelOverflow_NoSilentLiveFollowResume(t *testing.T) {
-	// UXR-014 Bug B in overflow mode: parked at the bottom (scrolled down)
-	// with live-follow paused, a Down press cannot move further and must not
-	// resume live-follow. Scrolling up then back down to the bottom DOES.
+	// UXR-018 (AC8, decision 2): cursor movement NEVER resumes live-follow —
+	// not even moving to the newest entry with j/↓. liveFollow changes only
+	// via L, G, and the collapse paths.
 	entries := entriesWithIDs(60)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
 	m := newModel(src, nil, Config{}, 80, 24)
@@ -5870,23 +5892,32 @@ func TestModelOverflow_NoSilentLiveFollowResume(t *testing.T) {
 	m.view.GotoBottom()
 	m.liveFollow = false
 
-	// Down at the bottom: no movement, no resume.
+	// j at the bottom: cursor clamps at the last entry, live-follow stays
+	// paused (no viewport movement, no resume — the old "resume on genuine
+	// bottom-ward movement" guard is deleted).
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = updated.(Model)
 	if m.liveFollow {
-		t.Fatal("expected liveFollow to stay false (Down couldn't move the viewport)")
+		t.Fatal("expected liveFollow to stay false (cursor movement never resumes)")
 	}
 
-	// Up moves away; Down back to the bottom resumes.
+	// Up moves the cursor away; Down back to the bottom: still paused.
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = updated.(Model)
 	if m.liveFollow {
-		t.Fatal("expected liveFollow still false after scrolling up")
+		t.Fatal("expected liveFollow still false after moving the cursor up")
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = updated.(Model)
+	if m.liveFollow {
+		t.Error("expected liveFollow still false after moving the cursor back to the bottom")
+	}
+
+	// Explicit G resumes (AC9).
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = updated.(Model)
 	if !m.liveFollow {
-		t.Error("expected liveFollow=true after scrolling back down to the bottom")
+		t.Error("expected liveFollow=true after explicit G")
 	}
 }
 
@@ -7269,5 +7300,750 @@ func TestInspectSeparatorAndBands(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], sgr(39, true)+"  │ REQUEST") {
 		t.Errorf("expected cyan-bold REQUEST header, got %q", lines[0])
+	}
+}
+
+// ------------------- UXR-018 — unified cursor navigation -------------------
+
+// viewportMaxYOffset mirrors bubbles' unexported maxYOffset: the largest
+// valid YOffset for the current content and height.
+func viewportMaxYOffset(v viewport.Model) int {
+	m := v.TotalLineCount() - v.Height
+	if m < 0 {
+		return 0
+	}
+	return m
+}
+
+// overflowModel builds a model with n entries in an 80x24 narrow viewport
+// (feed height 20), so the feed overflows. Returns the model and its source.
+func overflowModel(t *testing.T, n int) (Model, *fakeSource) {
+	t.Helper()
+	entries := entriesWithIDs(n)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: uint64(n)}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	if m.feedFits() {
+		t.Fatalf("test requires overflow-mode feed (n=%d viewH=%d)", n, m.view.Height)
+	}
+	return m, src
+}
+
+func TestUnifiedCursor_ReachesEveryEntryOverflow(t *testing.T) {
+	// AC1 — j/↓ repeatedly moves the cursor entry-by-entry through every
+	// entry of an overflowing feed, auto-scrolling so the selected entry's
+	// summary line stays visible.
+	m, _ := overflowModel(t, 60)
+
+	// g: cursor to first entry, viewport top, follow paused.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 0 {
+		t.Fatalf("expected selectedIdx=0 after g, got %d", m.selectedIdx())
+	}
+	if m.view.YOffset != 0 {
+		t.Fatalf("expected YOffset=0 after g, got %d", m.view.YOffset)
+	}
+
+	// j visits every entry 1..59; each stays on-screen.
+	for want := 1; want < 60; want++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = updated.(Model)
+		if got := m.selectedIdx(); got != want {
+			t.Fatalf("step %d: expected selectedIdx=%d, got %d", want, want, got)
+		}
+		line := m.feedEntryToLine[m.selectedIdx()]
+		if line < m.view.YOffset || line > m.view.YOffset+m.view.Height-1 {
+			t.Fatalf("step %d: selected line %d not visible in [%d,%d]",
+				want, line, m.view.YOffset, m.view.YOffset+m.view.Height-1)
+		}
+	}
+	if m.view.YOffset != viewportMaxYOffset(m.view) {
+		t.Fatalf("expected viewport scrolled to bottom (maxYOffset=%d), got %d",
+			viewportMaxYOffset(m.view), m.view.YOffset)
+	}
+
+	// j at the last entry clamps (no wrap, no panic).
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 59 {
+		t.Fatalf("expected clamped sel=59, got %d", m.selectedIdx())
+	}
+}
+
+func TestUnifiedCursor_ReturnsToFirstUp(t *testing.T) {
+	// AC2 — k/↑ moves the cursor entry-by-entry back toward the first entry
+	// with the viewport auto-scrolling to keep it visible.
+	m, _ := overflowModel(t, 60)
+
+	// G: cursor to newest, follow on.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 59 {
+		t.Fatalf("expected selectedIdx=59 after G, got %d", m.selectedIdx())
+	}
+
+	for want := 58; want >= 0; want-- {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = updated.(Model)
+		if got := m.selectedIdx(); got != want {
+			t.Fatalf("step %d: expected selectedIdx=%d, got %d", want, want, got)
+		}
+		line := m.feedEntryToLine[m.selectedIdx()]
+		if line < m.view.YOffset || line > m.view.YOffset+m.view.Height-1 {
+			t.Fatalf("step %d: selected line %d not visible in [%d,%d]",
+				want, line, m.view.YOffset, m.view.YOffset+m.view.Height-1)
+		}
+	}
+	if m.view.YOffset != 0 {
+		t.Fatalf("expected YOffset=0 after reaching the first entry, got %d", m.view.YOffset)
+	}
+}
+
+func TestUnifiedCursor_SkipsDetailLines(t *testing.T) {
+	// AC3 — j moves to the NEXT ENTRY (skipping the expanded entry's detail
+	// block), not to the next rendered line.
+	m, _ := overflowModel(t, 30)
+	m.sel = 5
+	m.selTouched = true
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-5" {
+		t.Fatalf("expected expandedID=req-5, got %q", m.expandedID)
+	}
+	summaryLine := m.feedEntryToLine[5]
+
+	// j: cursor moves to entry 6, whose summary line sits well past the
+	// expanded detail block.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 6 {
+		t.Fatalf("expected selectedIdx=6 (entry-by-entry), got %d", m.selectedIdx())
+	}
+	line6 := m.feedEntryToLine[6]
+	if line6 <= summaryLine+1 {
+		t.Errorf("expected entry 6 summary far past entry 5 summary (detail block), got line5=%d line6=%d", summaryLine, line6)
+	}
+	if m.expandedID != "req-5" {
+		t.Error("navigation must not collapse an active expansion")
+	}
+
+	// k moves back to entry 5 (the expanded entry).
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 5 {
+		t.Fatalf("expected selectedIdx=5 after k, got %d", m.selectedIdx())
+	}
+}
+
+func TestUnifiedCursor_HighlightNotTopLine(t *testing.T) {
+	// AC4 — the highlight renders on the selected entry's actual position,
+	// NOT the top visible line.
+	m, _ := overflowModel(t, 60)
+	m.view.GotoBottom()
+	m.sel = 30
+	m.selTouched = true
+	m.ensureSelectedVisible()
+	selLine := m.feedEntryToLine[30]
+	if selLine <= m.view.YOffset {
+		t.Fatalf("selected line %d must not be the top visible line (YOffset=%d)", selLine, m.view.YOffset)
+	}
+
+	// Render the feed and locate the highlight marker row.
+	fr := m.buildFeed(m.selectedIdx())
+	markerRow := -1
+	for i, l := range strings.Split(fr.content, "\n") {
+		if strings.Contains(l, "▍") {
+			markerRow = i
+			break
+		}
+	}
+	if markerRow != selLine {
+		t.Fatalf("expected highlight marker on content line %d, got %d", selLine, markerRow)
+	}
+}
+
+func TestUnifiedCursor_AutoScrollTopAndBottom(t *testing.T) {
+	// AC5 — auto-scroll keeps the cursor visible at both edges; the cursor is
+	// never left off-screen by a navigation key.
+	m, _ := overflowModel(t, 60)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(Model)
+	for want := 1; want < 60; want++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+		if m.selectedIdx() != want {
+			t.Fatalf("expected selectedIdx=%d, got %d", want, m.selectedIdx())
+		}
+		line := m.feedEntryToLine[want]
+		if line < m.view.YOffset || line > m.view.YOffset+m.view.Height-1 {
+			t.Fatalf("cursor %d off-screen at line %d window [%d,%d]",
+				want, line, m.view.YOffset, m.view.YOffset+m.view.Height-1)
+		}
+	}
+	if m.view.YOffset != viewportMaxYOffset(m.view) {
+		t.Fatalf("expected viewport at bottom (maxYOffset=%d), got %d", viewportMaxYOffset(m.view), m.view.YOffset)
+	}
+	last := m.feedEntryToLine[59]
+	if last < m.view.YOffset || last > m.view.YOffset+m.view.Height-1 {
+		t.Fatalf("last entry not visible at window [%d,%d]", m.view.YOffset, m.view.YOffset+m.view.Height-1)
+	}
+}
+
+func TestUnifiedCursor_EnterInspectBothModes(t *testing.T) {
+	// AC6 — enter/i operate on the cursor identically in fits and overflow modes.
+	// Fits mode.
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	m.sel = 3
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-3" {
+		t.Fatalf("fits: expected expandedID=req-3, got %q", m.expandedID)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updated.(Model)
+	if !m.inspect {
+		t.Fatal("fits: expected inspect=true after 'i' on the expanded row")
+	}
+
+	// Overflow mode.
+	m2, _ := overflowModel(t, 60)
+	m2.sel = 40
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = updated.(Model)
+	if m2.expandedID != "req-40" {
+		t.Fatalf("overflow: expected expandedID=req-40, got %q", m2.expandedID)
+	}
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m2 = updated.(Model)
+	if !m2.inspect {
+		t.Fatal("overflow: expected inspect=true after 'i' on the expanded row")
+	}
+}
+
+func TestUnifiedCursor_OneModelNoOffsetDerivation(t *testing.T) {
+	// AC7 — the cursor is the single source of truth in BOTH modes; the
+	// viewport offset never derives the selection.
+	m, _ := overflowModel(t, 60)
+	m.sel = 25
+	m.selTouched = true
+	m.view.SetYOffset(10)
+	if got := m.selectedIdx(); got != 25 {
+		t.Fatalf("expected selection unchanged after manual scroll, got %d", got)
+	}
+	if m.feedEntryToLine[25] != 25 {
+		t.Fatalf("expected entryToLine[25]=25, got %d", m.feedEntryToLine[25])
+	}
+}
+
+func TestUnifiedCursor_NoImplicitLiveFollowResume(t *testing.T) {
+	// AC8 (decision 2) — cursor movement never resumes live-follow; not even
+	// j/pgdown/space at the bottom. Only explicit L (or G) resumes.
+	m, _ := overflowModel(t, 60)
+	m.view.GotoBottom()
+	m.liveFollow = false
+	m.sel = 59
+	m.selTouched = true
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'j'}},
+		{Type: tea.KeyPgDown},
+		{Type: tea.KeySpace},
+		{Type: tea.KeyRunes, Runes: []rune{'d'}},
+		{Type: tea.KeyRunes, Runes: []rune{'u'}},
+		{Type: tea.KeyRunes, Runes: []rune{'b'}},
+		{Type: tea.KeyRunes, Runes: []rune{'k'}},
+	} {
+		updated, _ := m.Update(msg)
+		m = updated.(Model)
+		if m.liveFollow {
+			t.Fatalf("%q must not resume live-follow", msg.String())
+		}
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m = updated.(Model)
+	if !m.liveFollow {
+		t.Fatal("expected liveFollow=true after explicit L")
+	}
+}
+
+func TestUnifiedCursor_NewEntriesNoDragWhilePaused(t *testing.T) {
+	// AC8 — with follow paused and the cursor on the newest entry, new
+	// arrivals must not yank the cursor or drag the viewport.
+	m, src := overflowModel(t, 60)
+	m.view.GotoBottom()
+	m.liveFollow = false
+	m.sel = 59
+	m.selTouched = true
+	selBefore := m.selectedIdx()
+	offsetBefore := m.view.YOffset
+
+	src.snap.RecentLogs = append(src.snap.RecentLogs,
+		mock.LogEntry{RequestID: "req-new-0", Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			Method: "POST", Path: "/new", ResponseStatus: 201, Webhook: "test", LatencyMs: 1.0},
+		mock.LogEntry{RequestID: "req-new-1", Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			Method: "POST", Path: "/new2", ResponseStatus: 201, Webhook: "test", LatencyMs: 2.0},
+	)
+	src.snap.TotalLogs += 2
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	if m.selectedIdx() != selBefore {
+		t.Errorf("cursor must not be yanked by new arrivals, got %d want %d", m.selectedIdx(), selBefore)
+	}
+	if m.view.YOffset != offsetBefore {
+		t.Errorf("viewport must not be dragged, got %d want %d", m.view.YOffset, offsetBefore)
+	}
+	if m.liveFollow {
+		t.Error("live-follow must stay paused")
+	}
+}
+
+func TestUnifiedCursor_GAndG(t *testing.T) {
+	// AC9 — g: cursor to first entry + viewport top + pause; G: cursor to
+	// newest + viewport bottom + resume. Pure navigation — neither collapses
+	// an active row expansion.
+	m, _ := overflowModel(t, 60)
+	m.sel = 30
+	m.selTouched = true
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-30" {
+		t.Fatalf("expected expansion of req-30, got %q", m.expandedID)
+	}
+	m.liveFollow = false
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 0 {
+		t.Fatalf("expected sel=0 after g, got %d", m.selectedIdx())
+	}
+	if !m.selTouched {
+		t.Fatal("expected selTouched=true after g")
+	}
+	if m.liveFollow {
+		t.Fatal("expected liveFollow=false after g")
+	}
+	if m.view.YOffset != 0 {
+		t.Fatalf("expected YOffset=0 after g, got %d", m.view.YOffset)
+	}
+	if m.expandedID == "" {
+		t.Fatal("g must not collapse an active expansion")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 59 {
+		t.Fatalf("expected sel=59 after G, got %d", m.selectedIdx())
+	}
+	if m.selTouched {
+		t.Fatal("expected selTouched=false after G")
+	}
+	if !m.liveFollow {
+		t.Fatal("expected liveFollow=true after G")
+	}
+	if !m.view.AtBottom() {
+		t.Fatal("expected at bottom after G")
+	}
+	if m.expandedID == "" {
+		t.Fatal("G must not collapse an active expansion")
+	}
+}
+
+func TestUnifiedCursor_LiveAttachNoYank(t *testing.T) {
+	// UXR-018 §4.3 — the syncFeed live-attach guard: while passively
+	// live-following (selTouched=false) the cursor rides the newest entry on
+	// ticks; once the user moves the cursor, ticks stop yanking it.
+	m, src := overflowModel(t, 60)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = updated.(Model)
+	if m.selTouched || !m.liveFollow || !m.view.AtBottom() {
+		t.Fatalf("precondition: want selTouched=false, liveFollow=true, at bottom; got %+v", m)
+	}
+
+	// Two new entries arrive on a tick while passively following.
+	src.snap.RecentLogs = append(src.snap.RecentLogs,
+		mock.LogEntry{RequestID: "req-new-0", Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			Method: "POST", Path: "/new", ResponseStatus: 201, Webhook: "test", LatencyMs: 1.0},
+		mock.LogEntry{RequestID: "req-new-1", Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			Method: "POST", Path: "/new2", ResponseStatus: 201, Webhook: "test", LatencyMs: 2.0},
+	)
+	src.snap.TotalLogs += 2
+	updated, _ = m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	if m.selectedIdx() != len(m.feedEntries)-1 {
+		t.Fatalf("expected cursor to ride the newest entry, got %d of %d",
+			m.selectedIdx(), len(m.feedEntries))
+	}
+	if !m.view.AtBottom() {
+		t.Error("expected viewport at bottom while live-following")
+	}
+}
+
+func TestUnifiedCursor_ResumeAndCollapseAttachToNewest(t *testing.T) {
+	// UXR-018 §4.3 — L-resume and every collapse path re-attach the cursor
+	// to the newest entry and re-anchor to the bottom.
+	m, _ := overflowModel(t, 60)
+	m.view.GotoBottom()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}}) // pause
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.selectedIdx() >= 59 {
+		t.Fatal("precondition: expected cursor off the newest entry before resume")
+	}
+
+	// L resume re-attaches.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	m = updated.(Model)
+	if !m.liveFollow {
+		t.Fatal("expected liveFollow=true after L-resume")
+	}
+	if m.selectedIdx() != 59 {
+		t.Errorf("expected cursor on newest after L-resume, got %d", m.selectedIdx())
+	}
+	if m.selTouched {
+		t.Error("expected selTouched=false after L-resume")
+	}
+	if !m.view.AtBottom() {
+		t.Error("expected at bottom after L-resume")
+	}
+
+	// enter-collapse re-attaches.
+	m.sel = 30
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "req-30" {
+		t.Fatalf("expected expansion of req-30, got %q", m.expandedID)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Fatal("expected collapse via enter")
+	}
+	if m.selectedIdx() != 59 || m.selTouched || !m.liveFollow || !m.view.AtBottom() {
+		t.Errorf("enter-collapse must attach to newest+bottom, got sel=%d touched=%v follow=%v atBottom=%v",
+			m.selectedIdx(), m.selTouched, m.liveFollow, m.view.AtBottom())
+	}
+
+	// esc clears an expansion and re-attaches.
+	m.sel = 20
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID == "" {
+		t.Fatal("expected expansion before esc")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Fatal("expected collapse via esc")
+	}
+	if m.selectedIdx() != 59 || m.selTouched || !m.liveFollow || !m.view.AtBottom() {
+		t.Errorf("esc-collapse must attach to newest+bottom, got sel=%d touched=%v follow=%v atBottom=%v",
+			m.selectedIdx(), m.selTouched, m.liveFollow, m.view.AtBottom())
+	}
+
+	// c clears an expansion and re-attaches.
+	m.sel = 10
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.expandedID == "" {
+		t.Fatal("expected expansion before c")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m = updated.(Model)
+	if m.expandedID != "" {
+		t.Fatal("expected collapse via c")
+	}
+	if m.selectedIdx() != 59 || m.selTouched || !m.liveFollow || !m.view.AtBottom() {
+		t.Errorf("c-collapse must attach to newest+bottom, got sel=%d touched=%v follow=%v atBottom=%v",
+			m.selectedIdx(), m.selTouched, m.liveFollow, m.view.AtBottom())
+	}
+}
+
+func TestUnifiedCursor_PageKeysJumpCursor(t *testing.T) {
+	// UXR-018 §4.2 — page keys jump the cursor by a viewport page (half for
+	// half-page bindings), clamped, auto-scrolled. view.Height=20 → step=19,
+	// half-step=9.
+	m, _ := overflowModel(t, 60)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(Model)
+	if m.selectedIdx() != 19 {
+		t.Fatalf("expected sel=19 after pgdown, got %d", m.selectedIdx())
+	}
+	if !m.selTouched {
+		t.Fatal("expected selTouched=true after a page key")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+	if m.selectedIdx() != 38 {
+		t.Fatalf("expected sel=38 after space (pgdown alias), got %d", m.selectedIdx())
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(Model)
+	if m.selectedIdx() != 19 {
+		t.Fatalf("expected sel=19 after pgup, got %d", m.selectedIdx())
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 0 {
+		t.Fatalf("expected sel=0 after b (pgup alias), got %d", m.selectedIdx())
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = updated.(Model)
+	if m.selectedIdx() != 9 {
+		t.Fatalf("expected sel=9 after ctrl+d, got %d", m.selectedIdx())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 18 {
+		t.Fatalf("expected sel=18 after d, got %d", m.selectedIdx())
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = updated.(Model)
+	if m.selectedIdx() != 9 {
+		t.Fatalf("expected sel=9 after ctrl+u, got %d", m.selectedIdx())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	m = updated.(Model)
+	if m.selectedIdx() != 0 {
+		t.Fatalf("expected sel=0 after u, got %d", m.selectedIdx())
+	}
+
+	// Every jump kept the cursor on-screen.
+	line := m.feedEntryToLine[m.selectedIdx()]
+	if line < m.view.YOffset || line > m.view.YOffset+m.view.Height-1 {
+		t.Fatalf("cursor off-screen after page jumps, line=%d window=[%d,%d]",
+			line, m.view.YOffset, m.view.YOffset+m.view.Height-1)
+	}
+
+	// pgdown at the last entry clamps.
+	m.sel = 59
+	m.ensureSelectedVisible()
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(Model)
+	if m.selectedIdx() != 59 {
+		t.Fatalf("expected clamped sel=59, got %d", m.selectedIdx())
+	}
+}
+
+func TestUnifiedCursor_RingEvictionAndFilterClamp(t *testing.T) {
+	// UXR-018 §4.5 — stale sel across ticks/filters clamps into range (no
+	// snap-to-0, no panic); empty filter results give -1 with safe nav no-ops.
+	m, src := overflowModel(t, 60)
+	m.sel = 40
+	m.selTouched = true
+
+	// Ring eviction: oldest 30 dropped, 30 new appended. sel=40 stays in
+	// range (points at a different entry now, but must not panic or snap).
+	newRing := append([]mock.LogEntry{}, entriesWithIDs(60)[30:]...)
+	for i := 0; i < 30; i++ {
+		newRing = append(newRing, mock.LogEntry{
+			RequestID: fmt.Sprintf("req-new-%d", i),
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			Method:    "POST", Path: "/new", ResponseStatus: 201, Webhook: "test", LatencyMs: 1.0,
+		})
+	}
+	src.snap.RecentLogs = newRing
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	if m.selectedIdx() != 40 {
+		t.Fatalf("expected sel=40 after ring eviction+append, got %d", m.selectedIdx())
+	}
+
+	// Ring shrink clamps instead of panicking.
+	src.snap.RecentLogs = entriesWithIDs(5)
+	updated, _ = m.Update(tickMsg(time.Now()))
+	m = updated.(Model)
+	if m.selectedIdx() != 4 {
+		t.Fatalf("expected sel clamped to 4 after shrink, got %d", m.selectedIdx())
+	}
+
+	// Filter to a matching subset clamps into the filtered range.
+	m.filter = Filter{Endpoint: "test"}
+	m.renderFeed()
+	if m.selectedIdx() < 0 || m.selectedIdx() >= len(m.feedEntries) {
+		t.Fatalf("expected sel clamped into filtered range, got %d (n=%d)", m.selectedIdx(), len(m.feedEntries))
+	}
+
+	// Filter to nothing yields -1; nav keys are safe no-ops.
+	m.filter = Filter{Endpoint: "missing"}
+	m.renderFeed()
+	if m.selectedIdx() != -1 {
+		t.Fatalf("expected -1 on empty filtered feed, got %d", m.selectedIdx())
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = updated.(Model)
+	if m.selectedIdx() != -1 {
+		t.Fatalf("expected -1 after j on empty filtered feed, got %d", m.selectedIdx())
+	}
+}
+
+func TestUnifiedCursor_EmptyAndNoMatch(t *testing.T) {
+	// UXR-018 §4.5 — empty feed / no-match filter: sel=-1, all navigation
+	// keys no-op, View() and ensureSelectedVisible are safe.
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	if m.selectedIdx() != -1 {
+		t.Fatalf("expected -1 for empty feed, got %d", m.selectedIdx())
+	}
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'j'}},
+		{Type: tea.KeyRunes, Runes: []rune{'k'}},
+		{Type: tea.KeyPgDown},
+		{Type: tea.KeyPgUp},
+		{Type: tea.KeyRunes, Runes: []rune{'g'}},
+		{Type: tea.KeyRunes, Runes: []rune{'G'}},
+	} {
+		updated, _ := m.Update(msg)
+		m = updated.(Model)
+		if m.selectedIdx() != -1 {
+			t.Fatalf("expected -1 after %q, got %d", msg.String(), m.selectedIdx())
+		}
+	}
+	m.ensureSelectedVisible()
+	_ = m.View() // must not panic
+}
+
+func TestUnifiedCursor_ResizeKeepsCursorVisible(t *testing.T) {
+	// UXR-018 §4.4 polish — after a WindowSizeMsg the cursor stays visible
+	// (ensureSelectedVisible re-pins unless a row is expanded).
+	m, _ := overflowModel(t, 60)
+	m.view.GotoBottom()
+	m.liveFollow = false
+	m.sel = 30
+	m.selTouched = true
+
+	for _, ws := range []tea.WindowSizeMsg{
+		{Width: 80, Height: 24},  // same geometry
+		{Width: 80, Height: 30},  // taller narrow
+		{Width: 100, Height: 30}, // wide layout
+	} {
+		updated, _ := m.Update(ws)
+		m = updated.(Model)
+		line := m.feedEntryToLine[m.selectedIdx()]
+		if line < m.view.YOffset || line > m.view.YOffset+m.view.Height-1 {
+			t.Fatalf("after resize %dx%d: cursor line %d not visible in [%d,%d]",
+				ws.Width, ws.Height, line, m.view.YOffset, m.view.YOffset+m.view.Height-1)
+		}
+	}
+}
+
+func TestEnsureSelectedVisible_MiddleNoScroll(t *testing.T) {
+	m, _ := overflowModel(t, 60)
+	m.view.SetYOffset(10)
+	m.sel = 15 // line 15 within [10+1, 10+20-2] = [11, 28] → no scroll
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 10 {
+		t.Fatalf("expected YOffset unchanged at 10, got %d", got)
+	}
+}
+
+func TestEnsureSelectedVisible_TopEdgeScrollsUp(t *testing.T) {
+	m, _ := overflowModel(t, 60)
+	m.view.SetYOffset(10)
+	m.sel = 10 // line 10 < 10+1 → scroll to line-margin = 9
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 9 {
+		t.Fatalf("expected YOffset=9 after top-edge scroll, got %d", got)
+	}
+}
+
+func TestEnsureSelectedVisible_BottomEdgeScrollsDown(t *testing.T) {
+	m, _ := overflowModel(t, 60)
+	m.view.SetYOffset(10)
+	m.sel = 28 // line 28 == 10+18 == y+h-1-margin → NOT above the threshold
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 10 {
+		t.Fatalf("expected YOffset unchanged at 10 for line 28, got %d", got)
+	}
+	m.sel = 29 // line 29 > y+h-1-margin → scroll down
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 11 {
+		t.Fatalf("expected YOffset=11 after bottom-edge scroll, got %d", got)
+	}
+}
+
+func TestEnsureSelectedVisible_LastEntryBottomClamp(t *testing.T) {
+	m, _ := overflowModel(t, 60)
+	m.view.SetYOffset(0)
+	m.sel = 59 // last entry at line 59; SetYOffset clamps to maxYOffset=41
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 41 {
+		t.Fatalf("expected YOffset clamped to maxYOffset=41, got %d", got)
+	}
+	last := m.feedEntryToLine[59]
+	if last < m.view.YOffset || last > m.view.YOffset+m.view.Height-1 {
+		t.Fatalf("last entry off-screen at YOffset=%d", m.view.YOffset)
+	}
+}
+
+func TestEnsureSelectedVisible_FitsModeNoOp(t *testing.T) {
+	entries := entriesWithIDs(5)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
+	m := newModel(src, nil, Config{}, 80, 40)
+	m.last = src.snap
+	m.renderFeed()
+	if !m.feedFits() {
+		t.Fatal("test requires fits-mode feed")
+	}
+	m.view.SetYOffset(1) // clamps to 0 in fits mode
+	m.sel = 4
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 0 {
+		t.Fatalf("fits-mode ensureSelectedVisible must be a no-op, YOffset=%d", got)
+	}
+}
+
+func TestEnsureSelectedVisible_TinyViewportMargin0(t *testing.T) {
+	// view.Height=2 → margin 0: the cursor may sit on the very top row.
+	entries := entriesWithIDs(50)
+	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
+	m := newModel(src, nil, Config{}, 80, 6) // feedHeight = 6-3-1 = 2
+	m.last = src.snap
+	m.renderFeed()
+	if m.view.Height != 2 {
+		t.Fatalf("expected view.Height=2, got %d", m.view.Height)
+	}
+	if m.feedFits() {
+		t.Fatal("test requires overflow feed")
+	}
+	m.sel = 0
+	m.view.SetYOffset(5)
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 0 {
+		t.Fatalf("expected YOffset=0 with margin 0 (top), got %d", got)
+	}
+	m.sel = 5
+	m.ensureSelectedVisible()
+	if got := m.view.YOffset; got != 4 {
+		t.Fatalf("expected YOffset=4 with margin 0 (bottom), got %d", got)
+	}
+}
+
+func TestEnsureSelectedVisible_EmptyFeedNoOp(t *testing.T) {
+	src := &fakeSource{snap: mock.StatsSnapshot{}}
+	m := newModel(src, nil, Config{}, 80, 24)
+	m.last = src.snap
+	m.renderFeed()
+	m.sel = 3 // stale cursor; empty feed → safe no-op
+	m.ensureSelectedVisible()
+	if m.selectedIdx() != -1 {
+		t.Fatalf("expected -1 on empty feed, got %d", m.selectedIdx())
 	}
 }

@@ -183,8 +183,9 @@ type Model struct {
 	feedEntries     []mock.LogEntry // displayed (filtered) entries backing current content
 	feedLineToEntry []int           // content line -> index into feedEntries, or -1
 	feedEntryToLine []int           // feedEntries index -> content line of its summary line
-	// UXR-014 — feed selection index when content fits viewport.
-	sel int // selected entry index into feedEntries
+	// UXR-014 / UXR-018 — feed selection cursor (unified, both modes).
+	sel        int  // selected entry index into feedEntries
+	selTouched bool // true once the user moved the cursor (j/k/↑/↓/page/g); ticks then stop yanking it
 
 	// WS-018 / UXR-013 — request/response inspector.
 	inspect       bool // inspect mode active (only when expandedID != "")
@@ -282,6 +283,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if line := m.expandedSummaryLine(); line >= 0 {
 			m.view.SetYOffset(line)
 		}
+		// UXR-018 polish — keep the cursor visible after a resize. Skipped
+		// while a row is expanded: the re-pin owns the offset.
+		if m.expandedID == "" {
+			m.ensureSelectedVisible()
+		}
 		return m, nil
 	}
 
@@ -327,6 +333,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renderFeed()
 			m.syncFeed()
 			m.syncEndpoints()
+			// UXR-018 polish — explicit user action: keep the cursor visible.
+			m.ensureSelectedVisible()
 			return m, nil
 		}
 		// UXR-006 — invalid filter: stay in prompt, show inline error.
@@ -344,11 +352,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if id == m.expandedID {
-			// Collapse: resume live-follow and re-anchor to bottom.
+			// Collapse: resume live-follow, re-attach the cursor to the
+			// newest entry and re-anchor to bottom (UXR-018).
 			m.expandedID = ""
 			m.inspect = false
 			m.liveFollow = true
 			m.renderFeed()
+			m.attachCursorToNewest()
 			m.view.GotoBottom()
 			return m, nil
 		}
@@ -376,8 +386,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncFeed()
 			m.syncEndpoints()
 			if collapsed {
+				m.attachCursorToNewest()
 				m.view.GotoBottom()
 			}
+			// UXR-018 polish — explicit user action: keep the cursor visible.
+			m.ensureSelectedVisible()
 		}
 		return m, nil
 
@@ -389,8 +402,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.syncFeed()
 		m.syncEndpoints()
 		if collapsed {
+			m.attachCursorToNewest()
 			m.view.GotoBottom()
 		}
+		// UXR-018 polish — explicit user action: keep the cursor visible.
+		m.ensureSelectedVisible()
 		return m, nil
 
 	// Toggle help overlay.
@@ -409,6 +425,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case s == "L" && !m.prompting:
 		m.liveFollow = !m.liveFollow
 		if m.liveFollow {
+			// UXR-018 — resume re-attaches the cursor to the newest entry so
+			// passive live-follow rides it again.
+			m.attachCursorToNewest()
 			m.view.GotoBottom()
 		}
 		m.syncFeed()
@@ -484,40 +503,62 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// feed. bubbles v1.0.0's viewport.DefaultKeyMap does not bind g/G (only
 	// PageDown/PageUp/HalfPageUp/HalfPageDown/Up/Down/Left/Right), so these
 	// are handled explicitly here rather than falling through to
-	// m.view.Update. Pure navigation — does NOT collapse an active row
-	// expansion, consistent with pgup/pgdn/arrow-key scrolling.
+	// m.view.Update. UXR-018 — unconditional cursor jumps (AC9): the cursor
+	// is the single source of truth, so GotoTop/GotoBottom set it directly
+	// (no offset derivation). Pure navigation — does NOT collapse an active
+	// row expansion, consistent with pgup/pgdn/arrow-key navigation.
 	case s == "g" && !m.prompting:
-		if m.feedFits() {
-			m.sel = 0
-		} else {
-			m.view.GotoTop()
-			m.sel = m.selectedIdxFromOffset()
-		}
+		m.sel = clampSel(0, len(m.feedEntries))
+		m.selTouched = true
+		m.view.GotoTop()
 		m.liveFollow = false
 		return m, nil
 	case s == "G" && !m.prompting:
-		if m.feedFits() {
-			m.sel = clampSel(len(m.feedEntries)-1, len(m.feedEntries))
-		} else {
-			m.view.GotoBottom()
-			m.sel = m.selectedIdxFromOffset()
-		}
+		m.sel = clampSel(len(m.feedEntries)-1, len(m.feedEntries))
+		m.selTouched = false
+		m.view.GotoBottom()
 		m.liveFollow = true
 		return m, nil
 
-	// UXR-014 — nav keys: in fits mode the viewport cannot scroll
-	// (maxYOffset=0) so j/k/↑/↓ move the explicit sel index; in overflow mode
-	// they fall through to the viewport below, which re-syncs sel.
+	// UXR-018 — page keys: converted to cursor jumps of a viewport page
+	// (half that for the half-page bindings), clamped + auto-scroll. The
+	// deleted fallthrough re-sync would otherwise let these scroll the view
+	// while the cursor drifts off-screen. `f` stays the filter-prompt key;
+	// `h`/`l`/`left`/`right` fall through (horizontal scroll is a no-op on
+	// vertical content).
+	case (s == "pgdown" || s == "pgup" || s == "b" || s == " " ||
+		s == "u" || s == "ctrl+u" || s == "d" || s == "ctrl+d") && !m.prompting:
+		step := m.view.Height - 1
+		if step < 1 {
+			step = 1
+		}
+		switch s {
+		case "pgup", "b":
+			m.sel = clampSel(m.sel-step, len(m.feedEntries))
+		case "u", "ctrl+u":
+			m.sel = clampSel(m.sel-step/2, len(m.feedEntries))
+		case "pgdown", " ":
+			m.sel = clampSel(m.sel+step, len(m.feedEntries))
+		default: // "d", "ctrl+d"
+			m.sel = clampSel(m.sel+step/2, len(m.feedEntries))
+		}
+		m.selTouched = true
+		m.ensureSelectedVisible()
+		return m, nil
+
+	// UXR-018 — nav keys: j/k/↑/↓ move the explicit cursor entry-by-entry
+	// in BOTH modes (AC1-AC3, AC7) with auto-scroll (AC5). They never touch
+	// liveFollow (AC8) and never reach the viewport fallthrough.
 	case (s == "j" || s == "down") && !m.prompting:
-		if m.feedFits() {
-			m.sel = clampSel(m.sel+1, len(m.feedEntries))
-			return m, nil
-		}
+		m.sel = clampSel(m.sel+1, len(m.feedEntries))
+		m.selTouched = true
+		m.ensureSelectedVisible()
+		return m, nil
 	case (s == "k" || s == "up") && !m.prompting:
-		if m.feedFits() {
-			m.sel = clampSel(m.sel-1, len(m.feedEntries))
-			return m, nil
-		}
+		m.sel = clampSel(m.sel-1, len(m.feedEntries))
+		m.selTouched = true
+		m.ensureSelectedVisible()
+		return m, nil
 	}
 
 	// Prompt input mode: swallow all keys.
@@ -539,29 +580,20 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Non-prompt mode: forward unhandled keys to the viewport for scrolling.
+	// Non-prompt mode: forward unhandled keys to the viewport (horizontal
+	// scrolling, unbound keys). UXR-018: no sel re-sync and no live-follow
+	// resume — the cursor is the single source of truth (AC7) and liveFollow
+	// changes only via L/G/collapse (AC8, decision 2).
 	var cmd tea.Cmd
-	before := m.view.YOffset
 	m.view, cmd = m.view.Update(msg)
-	// UXR-014 — keep sel consistent with the scroll position in overflow mode
-	// (in fits mode the viewport cannot move, so sel is left untouched).
-	if !m.feedFits() {
-		m.sel = m.selectedIdxFromOffset()
-	}
-	// UXR-003 — resume live-follow only on genuine bottom-ward movement
-	// (UXR-014 Bug B fix): a key that cannot move the viewport (pinned,
-	// unbound, or fits-on-screen where AtBottom() is trivially true) must
-	// not silently resume live-follow.
-	if m.view.YOffset != before && m.view.AtBottom() {
-		m.liveFollow = true
-	}
 	return m, cmd
 }
 
 // feedFits reports whether the rendered feed content fits entirely within the
-// stream viewport (no scrolling possible). When it fits, the viewport's
-// YOffset is pinned to 0 and selection is driven by the explicit sel index
-// (UXR-014); when content overflows, selection derives from YOffset as before.
+// stream viewport (no scrolling possible). UXR-018 — this is NO LONGER a
+// selection-path concept: the cursor (sel) is explicit in both modes. The one
+// remaining use is the syncFeed live-anchor guard, which keeps fits-mode
+// tick-survival byte-identical.
 func (m Model) feedFits() bool {
 	return len(m.feedLineToEntry) <= m.view.Height
 }
@@ -581,33 +613,51 @@ func clampSel(sel, n int) int {
 }
 
 // selectedIdx returns the feedEntries index of the currently selected row.
-// When the feed fits the viewport (UXR-014) the selection is the explicit sel
-// index; when content overflows it is the row at the top visible line.
-// Returns -1 when there is no valid selection.
+// UXR-018 — one unified selection model (AC7): the explicit sel cursor in
+// BOTH fits and overflow modes. Returns -1 when there is no valid selection
+// (empty feed or empty filter result).
 func (m Model) selectedIdx() int {
-	if m.feedFits() {
-		return clampSel(m.sel, len(m.feedEntries))
-	}
-	return m.selectedIdxFromOffset()
+	return clampSel(m.sel, len(m.feedEntries))
 }
 
-// selectedIdxFromOffset returns the feedEntries index of the row at the top
-// visible line (overflow mode). Returns -1 when there is no valid entry at
-// YOffset (blank line, placeholder, bounds exceeded, or nil maps before
-// first render).
-func (m Model) selectedIdxFromOffset() int {
-	if m.feedLineToEntry == nil {
-		return -1
+// ensureSelectedVisible scrolls the stream viewport so the selected entry's
+// summary line stays within [YOffset+margin, YOffset+Height-1-margin] with
+// margin = 1 (0 when Height < 3). SetYOffset clamps internally (bubbles
+// v1.0.0), so in fits mode this is a no-op (maxYOffset 0) — one code path
+// for both modes (AC5/AC7). The trailing -1 in feedLineToEntry is never
+// targeted (feedEntryToLine holds only real entries); bottom-margin math
+// lands exactly on maxYOffset for the last entry.
+func (m *Model) ensureSelectedVisible() {
+	n := len(m.feedEntries)
+	if n == 0 {
+		return
+	}
+	idx := clampSel(m.sel, n)
+	if m.feedEntryToLine == nil || idx >= len(m.feedEntryToLine) {
+		return
+	}
+	line := m.feedEntryToLine[idx]
+	h := m.view.Height
+	margin := 1
+	if h < 3 {
+		margin = 0
 	}
 	y := m.view.YOffset
-	if y < 0 || y >= len(m.feedLineToEntry) {
-		return -1
+	if line < y+margin {
+		m.view.SetYOffset(line - margin)
+		return
 	}
-	idx := m.feedLineToEntry[y]
-	if idx < 0 || idx >= len(m.feedEntries) {
-		return -1
+	if line > y+h-1-margin {
+		m.view.SetYOffset(line - h + 1 + margin)
 	}
-	return idx
+}
+
+// attachCursorToNewest moves the cursor to the newest (last) entry and clears
+// selTouched so passive live-follow rides it again. Does NOT touch liveFollow
+// or the viewport — callers re-anchor (L-resume, G, collapse paths).
+func (m *Model) attachCursorToNewest() {
+	m.sel = clampSel(len(m.feedEntries)-1, len(m.feedEntries))
+	m.selTouched = false
 }
 
 // expandedIdx returns the index of m.expandedID in feedEntries, or -1 if not
@@ -661,6 +711,14 @@ func (m *Model) syncFeed() {
 	switch {
 	case atBottom && m.liveFollow:
 		m.view.GotoBottom()
+		// UXR-018 — live-attach guard (AC8): while passively live-following,
+		// the cursor rides the newest entry; once the user moves the cursor
+		// (selTouched=true), ticks do not yank it. The !feedFits() guard
+		// keeps fits-mode tick-survival byte-identical
+		// (TestModelFitsSelection_SurvivesTickAndFilter).
+		if !m.selTouched && !m.feedFits() {
+			m.sel = clampSel(len(m.feedEntries)-1, len(m.feedEntries))
+		}
 	case prevLine >= 0:
 		if newLine := m.expandedSummaryLine(); newLine >= 0 {
 			m.view.SetYOffset(prevOffset + (newLine - prevLine))
@@ -681,14 +739,11 @@ func (m *Model) renderFeed() {
 		m.expandedID = ""
 		m.inspect = false
 	}
-	// UXR-014 — keep sel consistent with the rendered state: overflow mode
-	// derives it from the scroll position; fits mode clamps it into range so
-	// the selection survives ticks and filters without snapping back to 0.
-	if m.feedFits() {
-		m.sel = clampSel(m.sel, len(m.feedEntries))
-	} else {
-		m.sel = m.selectedIdxFromOffset()
-	}
+	// UXR-018 — clamp-only: the cursor is the single source of truth, so
+	// there is no offset derivation. Clamping keeps the selection in range
+	// across ticks and filters (no snap-to-0, no panic). No scroll at tick
+	// time — cursor-follow runs only on navigation keys (AC5/AC8).
+	m.sel = clampSel(m.sel, len(m.feedEntries))
 }
 
 // headerHeight returns the number of rows the header occupies: the title,

@@ -196,3 +196,62 @@ All four WS-018/pre-existing backlog items (`detaillines-header-cap`, `max-log-b
     124), `-race` clean, vet/gofmt clean. Docs: ADR + TUI reference updated. Notes:
     `styleSectionReq`/`styleSectionResp` declared but unused (package-level vars, legal);
     dev report said "8 TestHighlightJSON_*" — actually 7 (cosmetic).
+
+## 2026-08-08
+
+- **UXR-018 — unify feed selection: cursor navigation with auto-scroll (`[Should]`,
+  done + verified 2026-08-08).** Stakeholder bug report (2026-08-07): in overflow
+  mode (more requests than fit the panel) `j`/`↓` **scrolled** instead of selecting, and the
+  highlight was pinned to the **top visible line** (`selectedIdxFromOffset`), so entries below
+  the top were unreachable/not selectable. Root cause: two selection mechanisms split by
+  `feedFits()` (UXR-008 overflow offset-derivation vs UXR-014 fits-mode `sel`). Three
+  stakeholder decisions: (1) cursor + auto-scroll — `j`/`↓`/`k`/`↑` move the highlight
+  entry-by-entry with auto-scroll; (2) no implicit live-follow from cursor-at-bottom;
+  (3) one selection model everywhere.
+  - **Unification (AC7):** `selectedIdx()` = `clampSel(m.sel, len(m.feedEntries))` in BOTH
+    modes; `selectedIdxFromOffset()` **deleted**; `feedFits()` retained only as the
+    `syncFeed` live-anchor guard; the viewport fallthrough stripped of sel re-sync + the
+    "resume live-follow on bottom-ward movement" guard; `renderFeed` clamp-only (no scroll
+    at tick time).
+  - **Cursor movement + auto-scroll (AC1–AC5):** nav keys + page keys (`pgup`/`pgdn`/`b`/
+    `space`/`u`/`ctrl+u`/`d`/`ctrl+d`; `f` stays the filter-prompt key) are intercepted,
+    move `sel` (page = `view.Height-1`, half for half-page), set `selTouched=true`, call
+    `ensureSelectedVisible()` (margin 1, 0 when `Height<3`; `SetYOffset` clamps internally
+    so fits mode is a natural no-op — one code path), and return early — never touching
+    `liveFollow`, never reaching the viewport. `h`/`l`/`left`/`right` still fall through.
+    Entry-by-entry (AC3) is structural: `feedEntryToLine[sel]` = summary line; detail lines
+    map to the same index.
+  - **g/G (AC9):** unconditional cursor jumps — `g` → `sel=0`, `GotoTop`, pause follow;
+    `G` → `sel=last`, `GotoBottom`, resume follow. Pure navigation, does not collapse an
+    expansion.
+  - **Live-follow semantics (AC8/decision 2):** `liveFollow` flips only via `L`, `G`, and
+    the three collapse paths. New `m.selTouched bool`: the `syncFeed` live branch attaches
+    the cursor to the newest entry only while `!selTouched && !feedFits()` — passive
+    live-follow rides the newest; a touched cursor is never yanked; with follow paused on
+    the newest entry, new arrivals let it sink (intended — next nav key re-anchors). New
+    `attachCursorToNewest()` folded into `L`-resume and collapse paths (enter/esc/c).
+  - **Interactions (AC6/AC10):** `enter`/`i`/`esc`/`c`/filter/ring-eviction/`r` unchanged
+    (all operate on `selectedIdx()`). Polish: `ensureSelectedVisible()` after WindowSizeMsg
+    (skipped while expanded), filter-apply, esc/c. Edge cases: empty/no-match → `-1` safe
+    no-ops; stale `sel` clamps.
+  - **Scope:** `src/dashboard/model.go` + tests + docs only; `render.go` **zero changes**
+    (no stale call sites — build green). "Viewport only, no list/textinput" contract intact
+    (cursor is a plain `int`); no new dependencies, no flag changes. Endpoints panel
+    untouched (`shift+↑/↓`/`K`/`J` still scroll it).
+  - **Tests:** 8 existing rewritten/updated (offset-derived-selection or scroll-resumes-
+    follow assertions — `TestModelExpandPinsSummaryToTop`, `TestModelExpandOnlyOneAtATime`,
+    `TestFeedSelectedIdxBounds`, `TestModelOverflow_NoSilentLiveFollowResume`,
+    `TestModelLiveFollowResumeOnScrollToBottom`,
+    `TestRenderPauseButtonResumesOnScrollBottom`, `TestModelInspectDismissWithLivePaused`;
+    `TestModelLiveFollowPausePreservesOffset` passed unchanged) + **23 new** (`TestUnifiedCursor_*`
+    AC1–AC9 + mechanism: reaches-every-entry, returns-to-first, skips-detail-lines,
+    highlight-not-top-line, auto-scroll, enter/inspect-both-modes, one-model, no-implicit-
+    resume, no-drag-while-paused, g/G, live-attach, resume/collapse-attach, page-keys, ring-
+    eviction/filter-clamp, empty/no-match, resize-keeps-visible; `TestEnsureSelectedVisible_*`
+    7 units). Full suite **366 tests** (dashboard 257, mock 109), `-race` clean, `go vet`
+    clean, `gofmt` clean. Docs updated: `architecture.md` (UXR-008 bullet corrected, WS-010
+    keys bullet corrected, new UXR-018 ADR), `17-feed-cursor-navigation.md` §6 status,
+    `09-feed-selection-bug.md` (UXR-018 supersedes the two-mode split), TUI reference §5/§6/§7.
+    QA: **AC1–AC10 all PASS**, 366 tests green, no defects/gaps/deviations; live PTY smoke
+    test confirmed AC8 (no implicit resume), AC9 (g/G), AC10 (enter/i/esc/L under genuine
+    overflow). Status → `verified`.

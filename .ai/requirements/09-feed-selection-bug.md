@@ -161,3 +161,13 @@ correct (see §4 #6). Q3 → yes, latent but no live impact; deferred to backlog
   `clampSel`/`selectedIdx`/`selectedIdxFromOffset`, nav-key + `g`/`G` handling, Bug B
   guard). QA verified **AC1-AC6 all PASS** (319/319 suite, race + vet + gofmt clean,
   PTY-verified wide & narrow). Status → `verified`.
+
+> **Superseded by UXR-018 (2026-08-08).** The two-mode split this story introduced
+> (fits-mode explicit `sel` vs overflow-mode offset-derived selection) was unified by
+> UXR-018 (`17-feed-cursor-navigation.md`): `selectedIdx()` is now `clampSel(m.sel, …)` in
+> BOTH modes, `selectedIdxFromOffset()` is **deleted**, and `feedFits()` remains only as the
+> `syncFeed` live-anchor guard. The fits-mode fixes shipped here (explicit `sel`, Bug B guard
+> semantics, tick/filter survival) remain correct and are subsumed — the Bug B "no silent
+> resume" behaviour is now implemented structurally (cursor movement never touches
+> `liveFollow`). §4 steps 4–6 above are historical; the current implementation lives in
+> `model.go` (UXR-018 ADR in `architecture.md`).

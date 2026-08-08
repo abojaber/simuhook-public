@@ -88,7 +88,7 @@ The filter chip lives on the **endpoints panel title** when the left panel is vi
 | **Help overlay** | `?` (non-prompt) | `renderHelp` box appended below the footer; `?` or `esc` closes. |
 | **Row expansion** | `enter` (non-prompt) | `detailLines` rendered inline under the selected row: `request_id`, `matched`, `timestamp` (RFC3339Nano), headers, query, `request body:` (single line). Headers/query capped at `maxRenderedHeaders` (30) with `(N more …)` marker. **UXR-016 — a RESPONSE section follows** `request body:`: a status-tinted header (`RESPONSE <code>`, bold-240 + tint, same width-degradation to muted `RESPONSE <code>` as the inspector), an optional `variant: N` line when the endpoint used weighted/round-robin variants, response headers capped at `maxRenderedHeaders` (30) with a `(N more headers)` marker, and a multi-line response body via `formatBody` (pretty-printed JSON / capped plain, same as the inspector). Unmatched entries still show a 404-tinted RESPONSE section. Keyed by `RequestID`; survives ticks; auto-clears when the entry leaves the ring or stops matching the filter. `enter` again / `esc` / `c` collapse; collapsing resumes live-follow. **UXR-015 coloring:** fixed-field labels and block headers cyan-bold (`styleLabel`), header/query keys cyan (`styleKey`), body content yellow 220 (request) / green 76 (response), JSON bodies syntax-highlighted; placeholders/markers muted. **UXR-017 visual separation:** a muted full-width `─` separator (detail gutter + `─`×`contentW`, one content line) closes the request section before the RESPONSE header; the whole REQUEST section (incl. separator) carries a full-width dark-gray `236` background band and the whole RESPONSE section (RESPONSE header, variant, response headers, response body) a dark-navy `17` band, padded to the viewport width via the reset-safe `band()` post-pass; response header keys are magenta `213` (`kindKVResp`) and response JSON keys magenta `213` — request keys stay cyan. |
 | **Inspector** | `i` (non-prompt) | `inspectLines` — **REQUEST section header (cyan bold) as the first line**, then full REQUEST + RESPONSE sections (RESPONSE header bold-240 + status tint, headers, query, pretty-printed JSON bodies, `variant: N` when a response variant index is set). **UXR-015 coloring:** fixed-field labels cyan-bold, header/query keys cyan; request body yellow 220 / response body green 76 for plain text; both bodies routed through `formatBody` and JSON bodies syntax-highlighted (`highlightJSON`: keys cyan (request) / magenta 213 (response), string values default foreground, numbers yellow, true/false/null magenta 213, punctuation muted 240). **UXR-017:** identical separator + `236`/`17` background bands + magenta response keys as the enter detail (visual consistency). **Truncated JSON lines render unstyled** (default foreground) — a JSON line cut by `capLines`/`plainBody` ends in `…`, fails the tokenizer, and passes through unchanged (stakeholder decision 4, AC15). Label column is `%-14s` throughout. Works **standalone on the selected row** (DASH-004) and on an expanded row. `i` toggles/dismisses; position and live-follow restored on dismiss (`inspectFollow`). |
-| **Live-follow pause** | `L` | Toggles `liveFollow`; paused → view freezes, `[ Resume Stream ]`, `⏸ live`; resume re-anchors bottom. Also pauses on scroll-away and resumes only on genuine bottom-ward movement (UXR-014 Bug B guard: `YOffset != before && AtBottom()`). |
+| **Live-follow pause** | `L` | Toggles `liveFollow`; paused → view freezes, `[ Resume Stream ]`, `⏸ live`; resume re-anchors bottom and re-attaches the cursor to the newest entry. **UXR-018:** cursor movement (j/k/↑/↓/page keys) NEVER resumes live-follow — even at the newest entry; `liveFollow` flips only via `L`, `G`, and the collapse paths (enter-collapse/esc/c). |
 | **Endpoints panel toggle** | `e` | Hides/shows the left panel (stream takes full width); user toggle overrides auto-collapse. |
 | **Filter active** | `/`+apply | Feed filtered at render time only (ring never mutated); footer `showing X of Y recent (filtered)`; chip in panel title; `c`/`esc`/re-`/`+empty clears. |
 
@@ -98,21 +98,30 @@ The filter chip lives on the **endpoints panel title** when the left panel is vi
 
 Selection = "the row that is highlighted / `enter`-expandable / `i`-inspectable".
 
+**UXR-018 — one selection model in both modes.** The old two-mode split
+(fits-mode explicit `sel` vs overflow-mode offset-derived selection) is **removed**:
+`selectedIdx()` is the explicit `sel` cursor everywhere; `selectedIdxFromOffset()` is gone;
+`feedFits()` survives only as the `syncFeed` live-anchor guard.
+
 ```go
-func (m Model) feedFits() bool { return len(m.feedLineToEntry) <= m.view.Height }
-func (m Model) selectedIdx() int {
-    if m.feedFits() { return clampSel(m.sel, len(m.feedEntries)) }  // fits: explicit sel
-    return m.selectedIdxFromOffset()                                 // overflow: feedLineToEntry[YOffset]
-}
+func (m Model) selectedIdx() int { return clampSel(m.sel, len(m.feedEntries)) }
 ```
 
-- **Overflow** (more rendered lines than viewport): selection derives from `view.YOffset` —
-  scrolling moves the selection. `sel` is re-synced from `YOffset` after every render/nav.
-- **Fits** (all lines visible — UXR-014 fix): the viewport can't scroll (`maxYOffset=0`), so
-  an explicit `sel int` drives selection. `j`/`k`/`↑`/`↓` move `sel` (clamped); `g`/`G` set
-  `sel=0`/`sel=last`; `renderFeed()` clamps `sel` after every rebuild (survives ticks/filters).
-- Nav keys **fall through to the viewport only in overflow mode**. In fits mode they return
-  immediately after moving `sel`.
+- **Cursor movement** (`j`/`↓`/`k`/`↑` + page keys) moves `sel` entry-by-entry, sets
+  `selTouched = true`, and calls `ensureSelectedVisible()` — which scrolls the viewport so the
+  selected summary line stays within `[YOffset+margin, YOffset+Height-1-margin]` (`margin = 1`,
+  0 when `Height < 3`). `SetYOffset` clamps internally, so fits mode (maxYOffset 0) is a
+  natural no-op — **one code path for both modes**.
+- **`selTouched`**: default false. While passively live-following, ticks re-attach the cursor
+  to the newest entry; once the user moves the cursor, ticks never yank it (`syncFeed` live
+  branch: `if !m.selTouched && !m.feedFits() { m.sel = newest }`).
+- **`liveFollow`** flips only via `L`, `G`, and the collapse paths. `L`-resume and every
+  collapse re-attach the cursor to the newest entry and re-anchor to the bottom
+  (`attachCursorToNewest()` + `GotoBottom`).
+- **Entry-by-entry (AC3):** `sel` indexes `feedEntries`; `feedEntryToLine[sel]` is the summary
+  line; an expanded entry's detail lines map to the same index and are skipped by navigation.
+- `renderFeed()` clamps `sel` after every rebuild (stale selections survive ticks/filters
+  without snapping to 0); empty feed / no-match filter → `-1`, all nav keys no-op.
 
 ---
 
@@ -130,14 +139,16 @@ func (m Model) selectedIdx() int {
 | `L` | Pause/resume live-follow |
 | `?` | Toggle help |
 | `i` | Toggle request/response inspector (standalone or on expanded row) |
-| `j` / `↓`, `k` / `↑` | Move selection (`sel` in fits) / scroll feed (overflow) |
-| `pgup` / `pgdn` | Page feed (overflow only — no-op in fits) |
-| `g` / `G` | Jump top / bottom of feed (`g` pauses live-follow, `G` resumes; sets `sel` in fits) |
+| `j` / `↓`, `k` / `↑` | Move selection cursor entry-by-entry (both modes) + auto-scroll |
+| `pgup` / `pgdn` / `b` / `space` | Jump cursor a viewport page (`view.Height-1`) + auto-scroll |
+| `u` / `ctrl+u`, `d` / `ctrl+d` | Jump cursor half a page + auto-scroll |
+| `g` / `G` | Jump cursor to top / bottom of feed (`g` → `sel=0`, `GotoTop`, pauses live-follow; `G` → `sel=last`, `GotoBottom`, resumes live-follow). Pure navigation — does not collapse a row expansion |
 | `shift+↑` / `shift+↓` or `K` / `J` | Scroll endpoints panel (wide layout, left visible) |
 
 `g`/`G` are **not** in bubbles v1.0.0's `DefaultKeyMap` — handled as explicit `KeyMsg`s.
-`bubbles/viewport.DefaultKeyMap` also binds `d,u,f,b,h,l,space` — reserved for the viewport
-when not consumed above.
+`f` stays the filter-prompt key; `h`/`l`/`left`/`right` fall through to the viewport
+(horizontal scroll is a no-op on vertical content). Cursor movement never resumes live-follow
+(AC8); the AC5 auto-scroll guarantee applies only to navigation keys.
 
 ---
 

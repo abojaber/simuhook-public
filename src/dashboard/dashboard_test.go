@@ -8047,3 +8047,33 @@ func TestEnsureSelectedVisible_EmptyFeedNoOp(t *testing.T) {
 		t.Fatalf("expected -1 on empty feed, got %d", m.selectedIdx())
 	}
 }
+
+// TestEndpointsPanel_ShowsGlobRegex verifies glob and regex pattern stubs
+// render their effective pattern in the endpoints panel (MAT-005) rather
+// than a blank path column.
+func TestEndpointsPanel_ShowsGlobRegex(t *testing.T) {
+	eps := &fakeEndpoints{
+		eps: []*mock.Endpoint{
+			{ID: "users", Method: "GET", PathGlob: "/users/**"},
+			{ID: "orders", Method: "POST", PathRegex: `^/orders/[0-9]{5}$`},
+		},
+	}
+	src := &fakeSource{snap: mock.StatsSnapshot{
+		HitCounts:       map[string]uint64{"users": 0, "orders": 0},
+		EndpointLatency: map[string]mock.LatencyStats{},
+	}}
+	m := newModel(src, eps, Config{}, 200, 30)
+	m.last = src.snap
+	m.syncEndpoints()
+	view := m.View()
+
+	if !strings.Contains(view, "/users/**") {
+		t.Error("expected glob pattern to render in the endpoints panel, got blank or truncated")
+	}
+	if !strings.Contains(view, `^/orders/[0-9]{5}$`) {
+		t.Error("expected regex pattern to render in the endpoints panel, got blank or truncated")
+	}
+	if strings.Contains(view, "GET   →") || strings.Contains(view, "POST  →") {
+		t.Error("expected no blank path column for pattern-based stubs")
+	}
+}

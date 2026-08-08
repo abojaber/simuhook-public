@@ -1,0 +1,16 @@
+# Path glob demo (MAT-001).
+# Demonstrates: path_glob matching with ** (multi-segment), * (single segment),
+# and ? (single character).
+#
+#   GET /users/123       → matches (** spans one segment)
+#   GET /users/ada/orders → matches (** spans two segments)
+#   GET /users            → matches (** may match zero segments)
+#
+# At most one of path / path_glob / path_regex may be set — a stub setting
+# more than one fails to load with a parse error.
+id: users-by-id
+method: GET
+path_glob: /users/**
+response:
+  status_code: 200
+  body: '{"user":"found","matched_by":"path_glob"}'

@@ -255,3 +255,53 @@ All four WS-018/pre-existing backlog items (`detaillines-header-cap`, `max-log-b
     QA: **AC1–AC10 all PASS**, 366 tests green, no defects/gaps/deviations; live PTY smoke
     test confirmed AC8 (no implicit resume), AC9 (g/G), AC10 (enter/i/esc/L under genuine
     overflow). Status → `verified`.
+
+- **MAT-001..006 — Smarter matching (`[Should]`, done + verified 2026-08-08).** Goal:
+  match stubs the way real integrations call services. Scope signed off by stakeholder:
+  (1) path glob `**`/`*`/`?` (hand-rolled — stdlib has no `**`), (2) path regex (stdlib RE2,
+  user-anchored), (3) partial-JSON request body via `payload_contains:` JSON subset spec,
+  (4) specificity ordering for overlapping stubs, (5) headers/query stay exact.
+  - **New stub fields (additive, backward-compatible):** `path_glob`, `path_regex`,
+    `payload_contains` (YAML + JSON + Endpoint). At most one of `path`/`path_glob`/
+    `path_regex`; at most one of `payload`/`payload_contains` — load-time parse error
+    otherwise (names the stub ID and fields, consistent with invalid-`delay` handling).
+  - **Glob semantics (D1/D2/D5/D7):** segment-wise recursive matcher; `**` = 0+ segments,
+    `*` = one whole segment, `?` = exactly one rune; trailing/leading slashes normalized
+    for glob only; in-segment `*` → parse error; `?` not counted toward wildcard weight
+    (weight: `**`=2, `*`=1, fewer wins — so `/users/*/orders` beats `/users/**`).
+  - **Regex (D6):** stdlib RE2, compiled once at load; no implicit anchoring (`^…$` is the
+    author's job); invalid regex → load-time error naming stub ID + pattern; `Add`/`Update`
+    safety net returns `endpoint <id>: …`.
+  - **Subset (D3):** request body JSON-parsed at most once per `Match`, lazily, only when a
+    `payload_contains` candidate survives method→path→headers→query. Objects → every spec
+    key present + recursive subset (extra request keys ignored); arrays → each spec element
+    subset-matches a DISTINCT request element (order-independent, backtracking — greedy is
+    wrong); scalars → deep-equal via float64 (`42 == 42.0`); `null` → matches only literal
+    `null` (unexported `hasPayloadContains` disambiguates unset vs explicit null). Non-JSON
+    or empty request body → never matches.
+  - **Specificity (MAT-004):** `Match` is a single-pass best-match under `better(a,b)` —
+    path class (exact 0 < glob 1 < regex 2) → glob wildcard weight (fewer wins) → load
+    order `seq` (assigned in `Add`, preserved on `Update` — hot-reload keeps its slot).
+    Comparator is a total order, so Go map iteration order can no longer influence the
+    winner. Constraints (method/headers/query/payload) still AND-ed before comparison.
+  - **Display (MAT-005):** `ep.DisplayPath()` (path → glob → regex) in dashboard endpoints
+    panel (both layouts, sanitized) + startup banner, so pattern stubs are never blank.
+  - **Watcher (MAT-005):** new `ErrDuplicate` sentinel; `LoadAll`/`Watch` branch on
+    `errors.Is` so a compile failure logs `stub: skip/parse error` and never a misleading
+    "duplicate, updating". Last-known-good stub stays active on a broken hot-reload.
+  - **Files:** new `matcher.go` (pathClass/matchPath dispatch, splitPathSegs/matchGlobSegs,
+    compileEndpoint, parsePayloadContains, DisplayPath), `subset.go` (parseJSONBody,
+    subsetMatch/subsetMatchArray/subsetArrayRec); registry.go rewritten Match + `better`;
+    stub.go +3 fields; types.go +`PathGlob`/`PathRegex`/`PayloadContains` + unexported
+    compiled fields; watcher.go ErrDuplicate branch; main.go + render.go display;
+    sample stubs `users-by-id.yaml`, `orders-filter.yaml`; docs README/contracts/architecture.
+  - **Tests:** new `matcher_test.go` (20), `subset_test.go` (12), `specificity_test.go`
+    (7) + additions to `stub_test.go` (6), `handler_test.go` (3), `dashboard_test.go` (1) —
+    **48 new**, suite 366 → **415** (dashboard 258, mock 157), `-race` clean, vet + gofmt
+    clean. Existing exact-match tests untouched (byte-identical behavior).
+  - **QA:** **MAT-001..006 all PASS** — every AC exercised by a regression-proving test
+    (incl. zero-segment `**`, array backtracking, 100×/50× tiebreak determinism, Add-
+    invalid-regex-registry-unchanged); live smoke (glob/regex/subset/backward-compat/
+    watcher reload, banner shows patterns) confirmed. One low-severity deviation found +
+    fixed: `Registry.Update` returned compile errors bare — now wrapped `endpoint <id>: …`
+    matching `Add` + design §4, with a regression assertion. Status → `verified`.

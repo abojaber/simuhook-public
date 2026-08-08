@@ -122,7 +122,7 @@ func main() {
 			if method == "" {
 				method = "ANY "
 			}
-			line := fmt.Sprintf("    %-5s %s → %s", method, ep.Path, ep.ID)
+			line := fmt.Sprintf("    %-5s %s → %s", method, ep.DisplayPath(), ep.ID)
 			if len(line)+4 > boxWidth {
 				boxWidth = len(line) + 4
 			}

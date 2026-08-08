@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -52,8 +53,18 @@ func (w *Watcher) LoadAll() error {
 			continue
 		}
 		if err := w.registry.Add(ep); err != nil {
-			log.Printf("stub: duplicate %s, updating", ep.ID)
-			w.registry.Update(ep.ID, ep)
+			if errors.Is(err, ErrDuplicate) {
+				log.Printf("stub: duplicate %s, updating", ep.ID)
+				if uerr := w.registry.Update(ep.ID, ep); uerr != nil {
+					log.Printf("stub: update %s: %v", ep.ID, uerr)
+				}
+			} else {
+				// Compile/validation error — a genuine load failure, not a
+				// hot-reload update. Log and skip, consistent with the
+				// existing invalid-delay handling.
+				log.Printf("stub: skip %s: %v", entry.Name(), err)
+				continue
+			}
 		}
 		log.Printf("stub: loaded %s from %s", ep.ID, entry.Name())
 	}
@@ -80,7 +91,15 @@ func (w *Watcher) Watch() {
 						continue
 					}
 					if err := w.registry.Add(ep); err != nil {
-						w.registry.Update(ep.ID, ep)
+						if errors.Is(err, ErrDuplicate) {
+							log.Printf("stub: duplicate %s, updating", ep.ID)
+							if uerr := w.registry.Update(ep.ID, ep); uerr != nil {
+								log.Printf("stub: update %s: %v", ep.ID, uerr)
+							}
+						} else {
+							log.Printf("stub: %s parse error: %v", id, err)
+							continue
+						}
 					}
 					log.Printf("stub: loaded %s", ep.ID)
 				case event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename):

@@ -325,7 +325,7 @@ func (m Model) endpointRow(ep *mock.Endpoint, epW int) string {
 	}
 	method = padRight(truncPlain(method, 6), 6)
 
-	epPath := padRight(truncPlain(sanitize(ep.Path), epW), epW)
+	epPath := padRight(truncPlain(sanitize(ep.DisplayPath()), epW), epW)
 	stub := padRight(truncPlain(sanitize(ep.ID), 8), 8)
 
 	count := m.last.HitCounts[ep.ID]
@@ -492,7 +492,7 @@ func (m Model) renderHeader() string {
 				if method == "" {
 					method = "ANY "
 				}
-				left := fmt.Sprintf("    %-5s %s → %-20s", method, ep.Path, ep.ID)
+				left := fmt.Sprintf("    %-5s %s → %-20s", method, sanitize(ep.DisplayPath()), ep.ID)
 
 				// UXR-002 — per-endpoint request count + p95
 				count := m.last.HitCounts[ep.ID]

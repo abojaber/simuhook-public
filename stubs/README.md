@@ -16,6 +16,8 @@ Each `.yaml` file in this directory defines one webhook endpoint. Files are load
 | `order-placed.yaml` | `POST /webhooks/order` | POST | Header matching, custom status, delay |
 | `order-created.yaml` | `POST /webhooks/orders` | POST | Dynamic templates (`{{.UUID}}`, `{{.Now}}`, etc.) |
 | `echo.yaml` | `POST /webhooks/echo` | POST | Echo mode — returns your request body |
+| `users-by-id.yaml` | `GET /users/**` | GET | Path glob matching (`**` / `*` / `?`) |
+| `orders-filter.yaml` | `POST /orders/<5-digit-id>` | POST | Path regex + partial JSON body matching |
 
 ---
 
@@ -58,6 +60,16 @@ curl -X POST http://localhost:8080/webhooks/echo \
   -H "Content-Type: application/json" \
   -d '{"hello":"world"}'
 
+# Path glob — ** spans zero or more segments
+curl http://localhost:8080/users/123
+curl http://localhost:8080/users/123/orders
+
+# Path regex + partial JSON body matching — the body must CONTAIN
+# {"event":"order.placed","amount":42} (extra fields are ignored)
+curl -X POST http://localhost:8080/orders/12345 \
+  -H "Content-Type: application/json" \
+  -d '{"event":"order.placed","amount":42,"note":"ignored"}'
+
 # 404 — no matching endpoint
 curl http://localhost:8080/nonexistent
 ```
@@ -77,11 +89,14 @@ response:
 id: my-endpoint
 method: POST                              # HTTP method (empty = match any)
 path: /webhooks/event                     # URL path (exact match)
+path_glob: /users/**                       # URL path glob (exact `path` wins over glob when both could match)
+path_regex: '^/orders/[0-9]{5}$'           # URL path regex (RE2 — anchor with ^…$ yourself)
 headers:                                  # Request headers to match (optional)
   X-Event: event.created
 query:                                    # Query params to match (optional)
   token: abc123
 payload: '{"type":"test"}'                # Exact request body to match (optional)
+payload_contains: '{"event":"user.created"}' # Partial JSON request-body match (optional)
 response:
   status_code: 201                        # HTTP status (default: 200)
   body: '{"ok":true}'                     # Response body (optional)
@@ -92,6 +107,39 @@ response:
   echo: true                              # Return request body verbatim (optional)
   template: true                          # Enable Go template in body/headers (optional)
 ```
+
+### Path matching (smarter matching — MAT-001/002)
+
+At most **one** of `path` / `path_glob` / `path_regex` may be set per stub — a stub
+setting more than one fails to load with a parse error naming the stub ID and the
+conflicting fields.
+
+| Field | Semantics |
+|-------|-----------|
+| `path` | Exact match on the raw URL path (unchanged behavior). |
+| `path_glob` | Segment-wise glob: `**` = zero or more segments, `*` = exactly one segment, `?` = exactly one character. Trailing/leading slashes are normalized. An in-segment `*` (e.g. `/files/*.pdf`) is a load-time parse error. A glob with no wildcards behaves exactly like `path`. |
+| `path_regex` | Go stdlib `regexp` (RE2). The pattern is **not** implicitly anchored — write `^…$` yourself when you want a full-path match. Invalid regexes are load-time parse errors. |
+
+When several stubs could match a request, the most specific one wins
+(MAT-004): exact path > glob > regex; among globs, fewer wildcards win
+(`/users/*/orders` beats `/users/**`); identical specificity falls back to
+load order, deterministically.
+
+### Partial JSON body matching (`payload_contains` — MAT-003)
+
+`payload_contains` matches when the request body is valid JSON and *contains*
+the spec — extra request fields are ignored. Semantics:
+
+- **Objects:** every spec key must be present and subset-match recursively
+  (extra request keys ignored).
+- **Arrays:** each spec element must match a **distinct** request element,
+  order-independent.
+- **Scalars:** deep equality with numeric cross-type equality (`42` matches
+  `42.0`). `null` matches only a literal `null` body.
+- A non-JSON request body never matches a `payload_contains` stub.
+
+The spec must be quoted in YAML. At most one of `payload` / `payload_contains`
+may be set — parse error otherwise. Invalid spec JSON is a load-time parse error.
 
 ### Feature Flags
 
@@ -128,9 +176,9 @@ response:
 An endpoint matches a request when **all** specified conditions are met:
 
 - `method` — must equal request method (empty matches any method)
-- `path` — exact match on the URL path
+- `path` | `path_glob` | `path_regex` — exactly one path matcher (exact path, glob, or regex)
 - `headers` — all listed headers must be present with the exact values
 - `query` — all listed query params must be present with the exact values
-- `payload` — request body must match exactly
+- `payload` | `payload_contains` — request body must match exactly (payload) or contain the JSON subset (payload_contains)
 
-If no endpoint matches, the server responds with `404`.
+When several endpoints match, the **most specific** one wins (exact path > glob > regex, fewer glob wildcards first, load order last). If no endpoint matches, the server responds with `404`.

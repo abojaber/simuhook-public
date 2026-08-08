@@ -1,0 +1,19 @@
+# Path regex + payload_contains demo (MAT-002 / MAT-003).
+# Demonstrates: path_regex (RE2, anchored by the user) combined with partial
+# JSON request-body matching.
+#
+# Matches POST /orders/12345 (five digits) whose body CONTAINS
+# {"event":"order.placed","amount":42} — extra request fields are ignored.
+#
+#   curl -X POST http://localhost:8080/orders/12345 \
+#     -H "Content-Type: application/json" \
+#     -d '{"event":"order.placed","amount":42,"note":"ignored extra field"}'
+#
+# A body missing either required field (or a non-JSON body) does NOT match.
+id: orders-filter
+method: POST
+path_regex: ^/orders/[0-9]{5}$
+payload_contains: '{"event":"order.placed","amount":42}'
+response:
+  status_code: 200
+  body: '{"filtered":true,"matched_by":"path_regex + payload_contains"}'

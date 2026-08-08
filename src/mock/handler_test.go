@@ -1239,3 +1239,97 @@ func TestHandler_ResponseVariant_RoundRobinIndices(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Smarter matching through the real Handler (MAT-001/002/003)
+// ---------------------------------------------------------------------------
+
+// TestHandler_GlobAndPayloadContains_Match verifies a path_glob +
+// payload_contains stub returns the configured response and logs
+// Matched=true (MAT-003 handler integration).
+func TestHandler_GlobAndPayloadContains_Match(t *testing.T) {
+	ep := &Endpoint{
+		ID:                 "filter",
+		Method:             "POST",
+		PathGlob:           "/orders/*",
+		PayloadContains:    map[string]any{"event": "order.placed", "amount": float64(42)},
+		hasPayloadContains: true,
+		Response:           Response{StatusCode: 200, Body: []byte(`{"ok":true}`)},
+	}
+	obs, ch := recordingObserver()
+	h, _ := testHandler(t, ep, obs)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/orders/12345",
+		strings.NewReader(`{"event":"order.placed","amount":42,"extra":"ignored"}`)))
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	got, _ := io.ReadAll(rec.Result().Body)
+	if string(got) != `{"ok":true}` {
+		t.Fatalf("expected configured body, got %q", string(got))
+	}
+	entry := <-ch
+	if !entry.Matched {
+		t.Fatal("expected Matched=true in log entry")
+	}
+	if entry.Webhook != "filter" {
+		t.Fatalf("expected webhook=filter, got %q", entry.Webhook)
+	}
+}
+
+// TestHandler_GlobAndPayloadContains_NoMatch verifies a wrong body (and a
+// non-JSON body) against the same stub still 404s.
+func TestHandler_GlobAndPayloadContains_NoMatch(t *testing.T) {
+	ep := &Endpoint{
+		ID:                 "filter",
+		Method:             "POST",
+		PathGlob:           "/orders/*",
+		PayloadContains:    map[string]any{"event": "order.placed"},
+		hasPayloadContains: true,
+		Response:           Response{StatusCode: 200, Body: []byte(`{"ok":true}`)},
+	}
+	obs, ch := recordingObserver()
+	h, _ := testHandler(t, ep, obs)
+
+	for _, body := range []string{
+		`{"event":"order.cancelled"}`, // wrong required value
+		`not-json`,                    // non-JSON body never matches
+		``,                            // empty body never matches
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/orders/12345", strings.NewReader(body)))
+		if rec.Code != 404 {
+			t.Errorf("body %q: expected 404, got %d", body, rec.Code)
+		}
+	}
+	entry := <-ch
+	if entry.Matched {
+		t.Error("expected Matched=false in log entry for the last unmatched request")
+	}
+}
+
+// TestHandler_RegexPathMatch verifies a path_regex stub matches through the
+// real Handler (MAT-002).
+func TestHandler_RegexPathMatch(t *testing.T) {
+	ep := &Endpoint{
+		ID:        "orders-by-id",
+		Method:    "GET",
+		PathRegex: `^/orders/[0-9]{5}$`,
+		Response:  Response{StatusCode: 200, Body: []byte(`order`)},
+	}
+	h, _ := testHandler(t, ep)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/orders/12345", nil))
+	if rec.Code != 200 {
+		t.Fatalf("expected 200 for matching regex path, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/orders/123", nil))
+	if rec.Code != 404 {
+		t.Fatalf("expected 404 for non-matching regex path, got %d", rec.Code)
+	}
+}

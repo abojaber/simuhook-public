@@ -3,6 +3,7 @@ package mock
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -356,5 +357,156 @@ response:
 	}
 	if ep.Response.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", ep.Response.StatusCode)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Smarter matching: stub file additions (MAT-001/002/003/005)
+// ---------------------------------------------------------------------------
+
+// writeStub writes a stub file into a temp dir and returns its path.
+func writeStub(t *testing.T, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(contents), 0644); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+	return path
+}
+
+func TestParseStubFile_GlobAndPayloadContains(t *testing.T) {
+	path := writeStub(t, "filter.yaml", `
+id: filter
+method: POST
+path_glob: /orders/*
+payload_contains: '{"event":"order.placed"}'
+response:
+  status_code: 200
+`)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.PathGlob != "/orders/*" {
+		t.Fatalf("expected path_glob, got %q", ep.PathGlob)
+	}
+	if !ep.hasPayloadContains {
+		t.Fatal("expected payload_contains matcher to be set")
+	}
+	if ep.DisplayPath() != "/orders/*" {
+		t.Fatalf("expected DisplayPath to return the glob, got %q", ep.DisplayPath())
+	}
+	// Compiled at load: pre-split segments + weight.
+	if len(ep.pathGlobSegs) != 2 || ep.globWeight != 1 {
+		t.Fatalf("expected compiled glob (segs=2, weight=1), got %#v / %d", ep.pathGlobSegs, ep.globWeight)
+	}
+	if !ep.matchPath("/orders/123") {
+		t.Error("compiled glob should match /orders/123")
+	}
+}
+
+func TestParseStubFile_PathExclusivityError(t *testing.T) {
+	path := writeStub(t, "conflict.yaml", `
+id: conflict
+method: GET
+path: /a
+path_glob: /a/*
+response:
+  status_code: 200
+`)
+
+	_, err := ParseStubFile(path)
+	if err == nil {
+		t.Fatal("expected error for path + path_glob")
+	}
+	for _, want := range []string{"conflict", "conflicting path matchers", "path_glob"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should contain %q, got %v", want, err)
+		}
+	}
+}
+
+func TestParseStubFile_InvalidPathRegexError(t *testing.T) {
+	path := writeStub(t, "badregex.yaml", `
+id: badregex
+method: GET
+path_regex: '([unclosed'
+response:
+  status_code: 200
+`)
+
+	_, err := ParseStubFile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid path_regex")
+	}
+	for _, want := range []string{"badregex", "invalid path_regex", "([unclosed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should contain %q, got %v", want, err)
+		}
+	}
+}
+
+func TestParseStubFile_PayloadExclusivityError(t *testing.T) {
+	path := writeStub(t, "payloadconflict.yaml", `
+id: payloadconflict
+method: POST
+path: /x
+payload: '{"a":1}'
+payload_contains: '{"a":1}'
+response:
+  status_code: 200
+`)
+
+	_, err := ParseStubFile(path)
+	if err == nil {
+		t.Fatal("expected error for payload + payload_contains")
+	}
+	for _, want := range []string{"payloadconflict", "conflicting payload matchers"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should contain %q, got %v", want, err)
+		}
+	}
+}
+
+func TestParseStubFile_InvalidPayloadContainsJSON(t *testing.T) {
+	path := writeStub(t, "badpayload.json.yaml", `
+id: badpayload
+method: POST
+path: /x
+payload_contains: '{oops'
+response:
+  status_code: 200
+`)
+
+	_, err := ParseStubFile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid payload_contains JSON")
+	}
+	for _, want := range []string{"badpayload", "invalid payload_contains JSON"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should contain %q, got %v", want, err)
+		}
+	}
+}
+
+func TestParseStubFile_RegexValidCompiled(t *testing.T) {
+	path := writeStub(t, "regex.yaml", `
+id: regex
+method: GET
+path_regex: '^/orders/[0-9]{5}$'
+response:
+  status_code: 200
+`)
+
+	ep, err := ParseStubFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.pathRe == nil {
+		t.Fatal("expected compiled regex at load")
+	}
+	if !ep.matchPath("/orders/12345") || ep.matchPath("/orders/123") {
+		t.Error("compiled regex should match the pattern only")
 	}
 }

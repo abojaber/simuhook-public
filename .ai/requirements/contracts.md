@@ -12,12 +12,26 @@ Each YAML file in the stubs directory defines one endpoint.
 # <endpoint-id>.yaml
 id: string               # unique endpoint ID, used for log file naming
 method: GET | POST | PUT | PATCH | DELETE | HEAD  # empty string = match all
-path: string             # URL path, must start with /
+path: string             # URL path, must start with / (exact match)
+path_glob: string        # optional: URL path glob (MAT-001): ** = 0+ segments,
+                         #   * = one segment, ? = one character. In-segment *
+                         #   is a parse error. Mutually exclusive with path
+                         #   and path_regex.
+path_regex: string       # optional: URL path regex (MAT-002), Go stdlib RE2.
+                         #   NOT implicitly anchored — write ^...$ yourself.
+                         #   Mutually exclusive with path and path_glob.
 headers:                 # optional: request header matching conditions
   X-Signature: "abc123"  # exact value match
 query:                   # optional: query parameter matching conditions
   token: "abc123"        # exact value match
 payload: "{}"            # optional: request body exact match
+payload_contains: '{"event":"user.created"}'
+                         # optional: partial JSON request-body match (MAT-003).
+                         #   Request body must be valid JSON containing the
+                         #   spec as a subset (extra fields ignored; arrays
+                         #   order-independent, distinct elements; numeric
+                         #   equality across 42/42.0; null matches only null).
+                         #   Mutually exclusive with payload.
 
 response:                # singular response (used when responses[] is absent)
   status_code: 200       # HTTP status code, default 200
@@ -39,6 +53,15 @@ responses:               # optional: multiple response variants
     weight: 20
     delay: 2s
 ```
+
+> **Smarter matching (MAT-001..004):** at most one of `path` / `path_glob` /
+> `path_regex` and at most one of `payload` / `payload_contains` may be set —
+> load-time parse errors name the stub ID and conflicting fields. When
+> multiple endpoints match, the most specific wins: exact path > glob > regex;
+> fewer glob wildcards first; then load order (deterministic, independent of
+> map iteration order). `Endpoint` serializes `path_glob`, `path_regex`, and
+> `payload_contains` (omitempty); compiled regex/glob/seq fields are
+> unexported and never serialized.
 
 ---
 

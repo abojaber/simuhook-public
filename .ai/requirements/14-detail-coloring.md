@@ -187,3 +187,6 @@ AC16 — Tests: existing detail/inspect tests that assert the wholesale-muted by
 ```
 
 **Out of scope (explicitly frozen):** Mode-2 (WS-016 line output, startup banner, `FormatRequestLine`). TUI-only change. No new flags, no admin API (removed ADM-002), no backlog items (WS-011 forwarding, WS-012 WebSocket).
+> Historical record (frozen 2026-08-08): WS-011 was later **removed from the backlog by
+> stakeholder decision 2026-08-08** (forwarding/proxy mode is out of scope). WS-012 remains
+> a `[Could]` backlog item.

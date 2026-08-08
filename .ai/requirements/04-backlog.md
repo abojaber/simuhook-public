@@ -128,7 +128,7 @@ Then  all recent entries are shown again
 - `q` inside batched filter text (e.g. `ep:queue`) → preserved as text
 - `esc` after typed text → cancels prompt entirely
 
-**Out of scope:** WS-011 forwarding (separate story), multi-screen navigation, charts beyond ASCII bars, SSE/web UI.
+**Out of scope:** multi-screen navigation, charts beyond ASCII bars, SSE/web UI.
 
 ---
 
@@ -222,15 +222,6 @@ Rewritten (from server_test.go): round-robin variants (status + body), nil-heade
 - Retires most of TGR-04's admin gap (currently `[Won't]`).
 
 **Dependencies:** WS-017 must land first (handler.go provides the observer/registry seams and deletes the old `MarshalEndpoints`).
-
----
-
-## WS-011 — Webhook forwarding / proxy mode
-
-**Status:** `draft` | **Priority:** `[Could]`
-
-**User Story:**
-> As a developer, I want the simulator to forward incoming requests to a real upstream service and log both the request and the upstream response so that I can use it as an inspection proxy.
 
 ---
 

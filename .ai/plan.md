@@ -30,7 +30,6 @@
 
 ## Backlog
 
-- **WS-011** — webhook forwarding / proxy mode (`[Could]`, draft).
 - **WS-012** — WebSocket / SSE endpoint simulation (`[Could]`, draft).
 - **WS-014 / ADM-001** — admin REST API reintroduction (`[Could]`, low; contract retained in
   `07-admin-handler.md`; requires input validation + watcher-ownership semantics).

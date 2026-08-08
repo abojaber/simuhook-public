@@ -169,5 +169,4 @@ The server exposes only the mock surface: requests are matched against stubs and
 
 ## Open Items
 
-- **WS-011** (`[Could]`, backlog): webhook forwarding / proxy mode.
 - **WS-012** (`[Could]`, backlog): WebSocket / SSE endpoint simulation.

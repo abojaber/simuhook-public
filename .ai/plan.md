@@ -31,6 +31,8 @@
 ## Backlog
 
 - **WS-012** — WebSocket / SSE endpoint simulation (`[Could]`, draft).
+- **Richer templates** — data generators + JSONPath extraction + request-field
+  access (`[Should]`, backlog; decision options in `.ai/backlog/richer-templates.md`).
 - **WS-014 / ADM-001** — admin REST API reintroduction (`[Could]`, low; contract retained in
   `07-admin-handler.md`; requires input validation + watcher-ownership semantics).
 - **DASH-006** — observer panic policy (`.ai/backlog/observer-panic-policy.md`; awaiting

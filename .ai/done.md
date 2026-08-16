@@ -305,3 +305,49 @@ All four WS-018/pre-existing backlog items (`detaillines-header-cap`, `max-log-b
     watcher reload, banner shows patterns) confirmed. One low-severity deviation found +
     fixed: `Registry.Update` returned compile errors bare — now wrapped `endpoint <id>: …`
     matching `Add` + design §4, with a regression assertion. Status → `verified`.
+
+## 2026-08-16
+
+- **TPL-001/002 — Richer templates: faker generators + JSONPath (`[Should]`, done + verified
+  2026-08-16).** Goal: give stub authors realistic data generators + request-body extraction
+  so mocked webhook responses look like real API output. Second approved stdlib-first
+  exception: `github.com/brianvoe/gofakeit/v7` pinned at `v7.15.0` (D16) — zero transitive
+  deps, MIT, mutex-locked global RNG (thread-safe under `-race`). Design delivered by
+  Architect (verified against the actual v7.15.0 source, all 161 tags) surfaced findings
+  that overrode the story's curated table — all stakeholder-approved (D9–D16).
+  - **Findings that overrode the story (D9–D11):** `ULID` does NOT exist in any gofakeit
+    tag → substituted `gofakeit.ID()` (20-char URL-safe lowercase; FuncMap key stays
+    `ULID`, documented "ULID-style identifier"). `Sentence`/`Paragraph` exist but are
+    DEPRECATED with silently-ignored args (wired as-is + documented). `Price` is 2-arg
+    only → zero-arg closure over `gofakeit.Price(0.01, 999.99)` formatted `"%.2f"`.
+  - **JSONPath (TPL-002, `src/mock/jsonpath.go`):** minimal strict subset — `$.key[0].sub`
+    traversal over `any`; hand-loop tokenizer (no regex). Rejected at tokenize: filters,
+    wildcards, recursive descent, negative indices, whitespace/unicode in keys, no-`$`
+    paths. Return semantics (D13/D14): strings raw; numbers `strconv.FormatFloat(v, 'g',
+    -1, 64)` (42→"42", 1e21→"1e+21"); bools unquoted; objects/arrays canonical `json.Marshal`
+    (not byte-exact); `null`→"null"; missing/invalid/OOB→""; non-JSON body → `""` for every
+    path even `$` (D12).
+  - **FuncMap + parse-once:** package-level `fakerFuncMap` (27 entries, built once at init,
+    read-only — `text/template` copies at parse time) merged per-render via
+    `buildTemplateFuncMap` into a fresh private map with the 4 existing funcs + `JSONPath`
+    closure. `TemplateData.parsedBody any` set once in `BuildTemplateData` via the existing
+    `parseJSONBody` from `subset.go` (reused, not duplicated). `handler.go`/`types.go`
+    untouched. `{{UUID}}` (func) and `{{.UUID}}` (field) are separate namespaces — no
+    collision. Existing funcs `{{RandomInt}}`/`{{RandomHex}}` byte-identical.
+  - **Files:** new `src/mock/jsonpath.go` + `jsonpath_test.go` (~30 table-driven);
+    `templating.go` funcMap/TemplateData; `templating_test.go` +13 (existing 7 untouched);
+    `handler_test.go` +2 round-trips (existing untouched); `go.mod`/`go.sum` gofakeit
+    promoted to **direct** dep; docs `stubs/README.md` + `contracts.md` (new Template
+    Functions contract) + `architecture.md` ADR; demo stub `stubs/template-showcase.yaml`.
+  - **Tests:** full suite **415 → 448** green under `-race`, `go vet` clean, `gofmt` clean.
+  - **Implementation note:** the Developer subagent failed to deliver code twice in this
+    session and the QA subagent's long-form report was lost mid-delivery — the BA executed
+    Phases A–D directly (after stakeholder directed "fix the gofakeit dep" → the real fix
+    is the import that promotes it to a direct require) and completed QA verification
+    directly. All checks were run against the real build; report in `.ai/qa/19-richer-
+    templates-report.md`.
+  - **QA:** **TPL-001/002 all ACs PASS** — 27-func presence/plausibility matrix, UUID
+    func/field independence, backward-compat byte-identical asserts, JSONPath fixture
+    semantics, non-JSON → `""` with response still 200 (live curl), parse-once caching,
+    448 tests green, vet/gofmt clean, live round-trip confirmed. No defects/gaps/
+    deviations. Status → `verified`.

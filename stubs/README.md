@@ -168,6 +168,70 @@ may be set — parse error otherwise. Invalid spec JSON is a load-time parse err
 | `{{Query "param"}}` | Value of a query parameter |
 | `{{RandomInt 1 100}}` | Random integer in range |
 | `{{RandomHex 8}}` | Random hex string of given length |
+| `{{JSONPath "$.user.name"}}` | Extract a field from the JSON request body (see below) |
+
+**Random data generators (TPL-001)** — each renders a realistic random value per render. All thread-safe; `Bool` renders `true`/`false`.
+
+| Function | Example output | Category |
+|----------|---------------|----------|
+| `{{Name}}` | `Markus Moen` | Person |
+| `{{FirstName}}` | `Fred` | Person |
+| `{{LastName}}` | `Moen` | Person |
+| `{{Email}}` | `alaynawuckert@kozey.biz` | Person |
+| `{{Phone}}` | `(570)245-7485` | Person |
+| `{{City}}` | `Lake Maxine` | Address |
+| `{{Country}}` | `Canada` | Address |
+| `{{State}}` | `Nebraska` | Address |
+| `{{Zip}}` | `38762` | Address |
+| `{{Street}}` | `98789 Hane Locks` | Address |
+| `{{Company}}` | `Moen, Pagac and Wuckert` | Company |
+| `{{JobTitle}}` | `Director` | Company |
+| `{{IPv4Address}}` | `192.168.1.42` | Internet |
+| `{{IPv6Address}}` | `2001:db8::1` | Internet |
+| `{{DomainName}}` | `kozey.biz` | Internet |
+| `{{MACAddress}}` | `ab:cd:ef:01:23:45` | Internet |
+| `{{UserAgent}}` | `Mozilla/5.0 …` | Internet |
+| `{{CreditCardNumber}}` | `4287271570245748` | Payment |
+| `{{Price}}` | `42.99` | Payment |
+| `{{ProductName}}` | `Incredible Metal Chair` | Product |
+| `{{ULID}}` | `pfsfktb87rcmj6bqha2fz9` | ID |
+| `{{HexColor}}` | `#a3e4f2` | Misc |
+| `{{Word}}` | `river` | Text |
+| `{{Sentence}}` | `Record river mind.` | Text |
+| `{{Paragraph}}` | `Quia voluptatem…` | Text |
+| `{{Bool}}` | `true` | Misc |
+| `{{UUID}}` | `0d1e6f2a-…` | ID |
+
+**Notes:**
+- `{{ULID}}` is a **ULID-style identifier** — it delegates to gofakeit's `ID()` (20-char URL-safe lowercase). Not a sortable 26-char ULID (gofakeit has no ULID function).
+- `{{Sentence}}`/`{{Paragraph}}` **accept but ignore** word/paragraph-count args — deprecated upstream, args have no effect.
+- `{{Price}}` uses the fixed range `(0.01, 999.99)`. For other ranges use `{{RandomInt}}` + formatting.
+- `{{UUID}}` (function, random) and `{{.UUID}}` (field, per-request) are independent and both available.
+
+#### JSONPath extraction (TPL-002)
+
+`{{JSONPath "$…"}}` extracts a field from the JSON request body. The body is
+parsed once per request; `{{.Body}}` still renders the full raw body string.
+
+| Path | Meaning |
+|------|---------|
+| `$` | The whole request body (as JSON string) |
+| `$.user` | Object key `user` |
+| `$.user.name` | Nested object key |
+| `$.items[0]` | Array index 0 |
+| `$.items[0].name` | Nested into an array element |
+| `$.items[1].tags[0]` | Deeper nesting |
+
+**Return semantics:** strings render unquoted; numbers render unquoted
+(`42`, `42.5`); booleans render `true`/`false`; `null` renders `null`;
+objects/arrays render as compact JSON; a missing path, out-of-bounds index,
+or **non-JSON request body** renders an empty string (no panic, no template
+fallback).
+
+**Restrictions:** keys are `[A-Za-z0-9_-]` only (no spaces/dots/unicode in
+keys); negative indices, filters (`$.x[?(@.a)]`), wildcards (`$.x[*]`), and
+recursive descent (`$..x`) are **not** supported. See
+[`stubs/template-showcase.yaml`](template-showcase.yaml) for a worked example.
 
 ---
 

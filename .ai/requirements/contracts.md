@@ -65,6 +65,49 @@ responses:               # optional: multiple response variants
 
 ---
 
+## Template Functions (when `response.template: true`)
+
+All funcs are niladic unless noted. Sources: existing funcs (unchanged) +
+`gofakeit/v7` curated subset (TPL-001) + `JSONPath` (TPL-002).
+
+### Existing
+| FuncMap name | Signature | Behavior |
+|---|---|---|
+| `Header` | `func(string) string` | Request header value (missing → "") |
+| `Query` | `func(string) string` | Query parameter value (missing → "") |
+| `RandomInt` | `func(int, int) int` | Random int in `[min, max)`; degenerate range → min |
+| `RandomHex` | `func(int) string` | Random lowercase hex string of given length |
+
+### Faker generators (gofakeit v7.15.0, pinned D16)
+| FuncMap name | gofakeit wiring | Return |
+|---|---|---|
+| `Name` / `FirstName` / `LastName` | `gofakeit.Name()` etc. | string |
+| `Email` | `gofakeit.Email()` | string |
+| `Phone` | `gofakeit.Phone()` | string |
+| `City` / `Country` / `State` / `Zip` / `Street` | `gofakeit.City()` etc. | string |
+| `Company` / `JobTitle` | `gofakeit.Company()` etc. | string |
+| `IPv4Address` / `IPv6Address` / `DomainName` / `MACAddress` / `UserAgent` | `gofakeit.IPv4Address()` etc. | string |
+| `CreditCardNumber` | closure over `gofakeit.CreditCardNumber(nil)` | string (Luhn-valid) |
+| `Price` | closure over `gofakeit.Price(0.01, 999.99)` formatted `"%.2f"` (D11) | string e.g. `"42.99"` |
+| `ProductName` | `gofakeit.ProductName()` | string |
+| `ULID` | `gofakeit.ID()` (**D9**: no ULID in gofakeit; 20-char URL-safe) | string |
+| `HexColor` | `gofakeit.HexColor()` | string `#rrggbb` |
+| `Word` | `gofakeit.Word()` | string |
+| `Sentence` | `gofakeit.Sentence` — **deprecated upstream, args ignored (D10)** | string |
+| `Paragraph` | `gofakeit.Paragraph` — **deprecated upstream, args ignored (D10)** | string |
+| `Bool` | `gofakeit.Bool()` | `"true"`/`"false"` |
+| `UUID` | `gofakeit.UUID()` | string (v4) |
+
+### JSONPath (TPL-002)
+| FuncMap name | Signature | Behavior |
+|---|---|---|
+| `JSONPath` | `func(string) string` | Extract from parsed JSON request body. `$` = root; `$.a.b` = keys; `$[0]` = array index. Missing/invalid/non-JSON body → `""` (no panic); `null` → `"null"`; objects/arrays → canonical `json.Marshal`; numbers → `FormatFloat('g', -1, 64)` (D14). Keys are `[A-Za-z0-9_-]`, no spaces (D15). Filters/wildcards/recursive descent rejected. Body parsed exactly once per request into `TemplateData.parsedBody`. |
+
+### Fields (unchanged, separate namespace from funcs)
+`{{.UUID}}` `{{.Now}}` `{{.Timestamp}}` `{{.RequestID}}` `{{.Method}}` `{{.Path}}` `{{.Body}}`. `{{UUID}}` (func) and `{{.UUID}}` (field) are independent.
+
+---
+
 ## Log Entry Schema (JSON Lines)
 
 ```json

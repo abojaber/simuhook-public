@@ -15,6 +15,8 @@
       2026-08-07 (commit `4c42c19`).
 - [x] **v0.1.0 release** — `--version` flag, README rewrite, tag pushed, release binaries
       built; GitHub release creation pending auth (blocked step, see below).
+- [x] **Richer templates (TPL-001/002)** — 27 gofakeit data generators + hand-rolled
+      JSONPath extraction; D9–D16 approved, implemented + QA-verified 2026-08-16.
 
 ## Active Priority
 
@@ -31,8 +33,6 @@
 ## Backlog
 
 - **WS-012** — WebSocket / SSE endpoint simulation (`[Could]`, draft).
-- **Richer templates** — data generators + JSONPath extraction + request-field
-  access (`[Should]`, backlog; decision options in `.ai/backlog/richer-templates.md`).
 - **WS-014 / ADM-001** — admin REST API reintroduction (`[Could]`, low; contract retained in
   `07-admin-handler.md`; requires input validation + watcher-ownership semantics).
 - **DASH-006** — observer panic policy (`.ai/backlog/observer-panic-policy.md`; awaiting

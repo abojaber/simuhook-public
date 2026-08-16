@@ -1333,3 +1333,78 @@ func TestHandler_RegexPathMatch(t *testing.T) {
 		t.Fatalf("expected 404 for non-matching regex path, got %d", rec.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestHandler_TemplateFakerJSONPath_RoundTrip (TPL-001/002)
+// ---------------------------------------------------------------------------
+func TestHandler_TemplateFakerJSONPath_RoundTrip(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "tpl-full",
+		Method: "POST",
+		Path:   "/tpl-full",
+		Response: Response{
+			StatusCode: 200,
+			Body: []byte(`{
+  "request_id": "{{.RequestID}}",
+  "customer_id": "{{JSONPath "$.customer.id"}}",
+  "name": "{{Name}}",
+  "email": "{{Email}}",
+  "price": "{{Price}}"
+}`),
+			Template: true,
+		},
+	}
+	h, _ := testHandler(t, ep)
+
+	reqBody := `{"customer":{"id":"cust-42","tier":"gold"}}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/tpl-full", strings.NewReader(reqBody)))
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"customer_id": "cust-42"`) {
+		t.Fatalf("JSONPath did not extract customer.id, body: %s", body)
+	}
+	if !strings.Contains(body, `"request_id": "`) {
+		t.Fatalf("RequestID field missing, body: %s", body)
+	}
+	// faker funcs rendered to plausible non-empty values
+	if !strings.Contains(body, `"name": "`) || strings.Contains(body, `"name": "{{`) {
+		t.Fatalf("Name func not rendered, body: %s", body)
+	}
+	if !strings.Contains(body, `"email": "`) || strings.Contains(body, `"email": "{{`) {
+		t.Fatalf("Email func not rendered, body: %s", body)
+	}
+	if !strings.Contains(body, `"price": "`) || strings.Contains(body, `"price": "{{`) {
+		t.Fatalf("Price func not rendered, body: %s", body)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestHandler_NonJSONBody_JSONPathEmpty (TPL-002: D12)
+// ---------------------------------------------------------------------------
+func TestHandler_NonJSONBody_JSONPathEmpty(t *testing.T) {
+	ep := &Endpoint{
+		ID:     "tpl-nonjson",
+		Method: "POST",
+		Path:   "/tpl-nonjson",
+		Response: Response{
+			StatusCode: 200,
+			Body:       []byte(`got={{JSONPath "$.id"}}`),
+			Template:   true,
+		},
+	}
+	h, _ := testHandler(t, ep)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/tpl-nonjson", strings.NewReader(`plain text body`)))
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200 for non-JSON body, got %d", rec.Code)
+	}
+	if got := rec.Body.String(); got != `got=` {
+		t.Fatalf("JSONPath on non-JSON body must render empty, got %q", got)
+	}
+}

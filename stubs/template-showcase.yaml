@@ -1,0 +1,19 @@
+# Template showcase: faker generators + JSONPath extraction (TPL-001/002).
+# POST a JSON body with a "customer" object and get back a realistic
+# webhook-shaped response using generated data.
+#
+#   curl -s -X POST http://localhost:8080/template-showcase \
+#     -H 'Content-Type: application/json' \
+#     -d '{"customer":{"id":"cust-42","name":"Ada Lovelace"}}'
+#
+# Demonstrates: template: true with faker funcs ({{Name}}, {{Email}},
+# {{ULID}}, {{Price}}, {{UUID}}, {{Bool}}, {{HexColor}}) and JSONPath
+# request-body extraction ({{JSONPath "$.customer.id"}}).
+
+id: template-showcase
+method: POST
+path: /template-showcase
+response:
+  status_code: 200
+  template: true
+  body: '{"request_id":"{{.RequestID}}","event":"customer.created","customer":{"id":"{{JSONPath "$.customer.id"}}","echo_name":"{{JSONPath "$.customer.name"}}","generated":{"name":"{{Name}}","email":"{{Email}}","city":"{{City}}","country":"{{Country}}"},"payment":{"card":"{{CreditCardNumber}}","amount":"{{Price}}","currency":"USD"},"meta":{"ulid":"{{ULID}}","uuid":"{{UUID}}","color":"{{HexColor}}","active":"{{Bool}}"}}}'

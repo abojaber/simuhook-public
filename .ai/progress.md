@@ -2,6 +2,35 @@
 
 ## Current Session
 
+### 2026-08-16 — Richer templates (TPL-001/002): faker generators + JSONPath — implemented + verified
+
+- **Stories TPL-001/002 (`[Should]`, verified).** Realistic data generators (27 curated
+  `gofakeit/v7` funcs: `{{Name}}`, `{{Email}}`, `{{Price}}`, `{{ULID}}`, `{{UUID}}`, …)
+  + hand-rolled strict JSONPath extraction (`{{JSONPath "$.user.name"}}`) from the JSON
+  request body, parsed exactly once per request into `TemplateData.parsedBody`.
+- **Design (Architect).** Full 632-line contract in `.ai/designs/19-richer-templates-design.md`,
+  verified against the actual gofakeit v7.15.0 source — surfaced 3 overrides to the story
+  table (all stakeholder-approved D9–D16): `ULID` does not exist → `gofakeit.ID()`;
+  `Sentence`/`Paragraph` deprecated with ignored args; `Price` requires 2 args → zero-arg
+  wrapper. Also locked: `$` on non-JSON body → `""`, canonical re-marshal for objects/
+  arrays, `FormatFloat('g')` numbers, strict key grammar, pin v7.15.0.
+- **Implementation (BA direct).** The Developer subagent failed to deliver twice (empty
+  results); stakeholder directed "fix the gofakeit dep" → the durable fix is the import.
+  The BA executed all 4 phases in-session: A dependency (promoted to direct require),
+  B `jsonpath.go` + ~30 table tests, C `templating.go` (`fakerFuncMap`,
+  `buildTemplateFuncMap`, `parsedBody`) + 13 templating + 2 handler tests, D docs
+  (README, contracts.md, architecture.md ADR) + `stubs/template-showcase.yaml` demo stub.
+- **QA (BA direct, report in `.ai/qa/19-richer-templates-report.md`).** All ACs PASS —
+  live curl round-trip extracted `cust-42`/`Ada Lovelace` via JSONPath, faker determinism
+  confirmed (3 distinct names/emails/ULIDs), non-JSON body → `"id":""` with 200 (D12).
+  Full suite **415 → 448 tests** green under `-race`; `go vet` + `gofmt` clean. No
+  defects/gaps/deviations. Status → `verified`.
+- **Process note.** All three subagent channels delivered truncated/empty results this
+  session; the BA completed implementation and verification directly against the real
+  build. Lesson (echo of the 2026-08-07 QA printf study): when delegation fails to
+  deliver, verify the artifact on disk (`ls` + read), then execute in-session and
+  record the evidence.
+
 ### 2026-08-07 — Detail coloring, response section, visual separation (UXR-015/016/017) + v0.1.0 release prep
 
 - **UXR-015 — colorized request detail (`[Should]`, verified).** `detailLines` (enter

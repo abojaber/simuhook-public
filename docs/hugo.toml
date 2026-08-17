@@ -1,0 +1,21 @@
+baseURL = '/'
+title = 'Simuhook'
+theme = 'hugo-book'
+
+# Book theme params (https://github.com/alex-shpak/hugo-book)
+[params]
+  BookTheme = true        # dark mode toggle
+  BookToC = true          # table of contents
+  BookSection = 'docs'    # main docs section
+  BookDateFormat = '2006-01-02'
+  BookRepo = 'https://github.com/abojaber/simuhook'
+  BookEditPath = 'edit/main/docs/content'
+  # BookSearch = true     # no built-in search in hugo-book; add later if needed
+
+[markup]
+  [markup.highlight]
+    style = 'github'
+    guessSyntax = true
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3

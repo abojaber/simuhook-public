@@ -29,10 +29,11 @@ jobs:
         working-directory: docs
         run: hugo --minify --baseURL 'https://spectralab.cc/'
 
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy docs/public --project-name=spectralab --branch=main --commit-hash=${{ github.sha }}
-          quiet: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler pages deploy docs/public --project-name=spectralab --branch=main --commit-hash=${{ github.sha }}

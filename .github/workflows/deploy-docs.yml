@@ -3,7 +3,7 @@ name: Deploy Docs to Cloudflare Pages
 on:
   push:
     branches: [main]
-    paths: ['docs/**']
+    paths: ['docs/**', '.github/workflows/**']
   workflow_dispatch:
 
 # Allow one concurrent deploy per branch; leave in-flight runs alone.

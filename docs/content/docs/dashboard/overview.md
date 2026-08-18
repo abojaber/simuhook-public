@@ -27,8 +27,7 @@ simuhook --tui off  # line output
 
 At a normal terminal size the dashboard shows two side-by-side panels:
 
-<!-- TODO(screenshots): drop dashboard-wide.png into docs/static/images/ and uncomment the figure line when ready:
-  {{< figure src="/images/dashboard-wide.png" title="Simuhook dashboard — wide two-column layout (endpoints table left, live request stream right)" >}} -->
+{{< screenshot-wip dashboard-wide >}}
 
 **Left — REGISTERED ENDPOINTS**
 
@@ -55,8 +54,7 @@ Two ways to see full request + response detail:
 | `enter` | Expands the selected row **inline** under it: request id, matched, timestamp, headers, query, request body, then a `RESPONSE` section with status, response headers, and response body. |
 | `i` | Opens a standalone **inspector** view of the selected row: a `REQUEST` section header, then full REQUEST + RESPONSE sections with pretty-printed JSON bodies. |
 
-<!-- TODO(screenshots): drop dashboard-detail.png into docs/static/images/ and uncomment the figure line when ready:
-  {{< figure src="/images/dashboard-detail.png" title="Expanded request detail — the `enter` view with REQUEST and RESPONSE sections" >}} -->
+{{< screenshot-wip dashboard-detail >}}
 
 Color coding (in both views): request keys cyan, response keys magenta, request bodies yellow, response bodies green, JSON syntax highlighted. Request sections carry a dark-gray background band; response sections a dark-navy band, separated by a muted `─` rule.
 

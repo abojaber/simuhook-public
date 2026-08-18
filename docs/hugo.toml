@@ -4,15 +4,18 @@ theme = 'hugo-book'
 
 # Book theme params (https://github.com/alex-shpak/hugo-book)
 [params]
-  BookTheme = true        # dark mode toggle
+  BookTheme = 'auto'      # system color mode: auto = follow OS dark/light; also light | dark
   BookToC = true          # table of contents
   BookSection = 'docs'    # main docs section
   BookDateFormat = '2006-01-02'
   BookRepo = 'https://github.com/abojaber/simuhook'
   BookEditPath = 'edit/main/docs/content'
-  # BookSearch = true     # no built-in search in hugo-book; add later if needed
 
 [markup]
+  [markup.goldmark.renderer]
+    # Allow raw HTML (e.g. <i class="fa-solid …"> icons) in content files.
+    # Content is first-party; unsafe HTML is not a concern here.
+    unsafe = true
   [markup.highlight]
     style = 'github'
     guessSyntax = true

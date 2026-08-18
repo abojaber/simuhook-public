@@ -1,0 +1,36 @@
+<script>
+(function () {
+  var KEY = "book-theme";
+  var VALID = ["auto", "light", "dark"];
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    var buttons = document.querySelectorAll("[data-theme-value]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle("active", buttons[i].getAttribute("data-theme-value") === theme);
+    }
+  }
+
+  function readSaved() {
+    try {
+      return localStorage.getItem(KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  var saved = readSaved();
+  applyTheme(saved && VALID.indexOf(saved) !== -1 ? saved : "auto");
+
+  var buttons = document.querySelectorAll("[data-theme-value]");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function () {
+      var theme = this.getAttribute("data-theme-value");
+      try {
+        localStorage.setItem(KEY, theme);
+      } catch (e) {}
+      applyTheme(theme);
+    });
+  }
+})();
+</script>

@@ -1,0 +1,11 @@
+{{/*
+  Placeholder for a screenshot that hasn't been captured yet.
+  Renders nothing. When the image is ready:
+    1. drop <name>.png into docs/static/images/
+    2. replace this shortcode with:
+       {{< figure src="/images/<name>.png" title="…" >}}
+  Params: .Get 0 = image filename (without extension) e.g. dashboard-wide
+*/}}
+{{- with .Get 0 -}}
+<!-- screenshot placeholder: docs/static/images/{{ . }}.png (add figure shortcode when ready) -->
+{{- end -}}

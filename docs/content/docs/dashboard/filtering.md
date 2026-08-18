@@ -42,8 +42,7 @@ Matches entries for the `ping` endpoint that returned `200` via a `GET`.
 - An active filter shows as a chip in the panel title and in the footer prompt bar.
 - Invalid `status:` values show an inline error and keep you in the prompt until fixed.
 
-<!-- TODO(screenshots): drop dashboard-filter.png into docs/static/images/ and uncomment the figure line when ready:
-  {{< figure src="/images/dashboard-filter.png" title="Filter prompt — `method:POST status:200` applied" >}} -->
+{{< screenshot-wip dashboard-filter >}}
 
 ## Also See
 

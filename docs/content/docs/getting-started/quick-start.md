@@ -16,8 +16,7 @@ simuhook
 
 The server starts on `:8080`, watches the `stubs/` directory, and logs requests to `logs/`. On a terminal it opens the interactive TUI dashboard; on a non-TTY (like a pipe) it prints a startup banner and one line per request.
 
-<!-- TODO(screenshots): drop startup-banner.png into docs/static/images/ and uncomment the figure line when ready:
-  {{< figure src="/images/startup-banner.png" title="The startup banner — shown on non-TTY output (`--tui off` or piped)" >}} -->
+{{< screenshot-wip startup-banner >}}
 
 ## 2. Verify It's Running
 

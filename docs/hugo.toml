@@ -1,15 +1,15 @@
-baseURL = '/'
-title = 'Simuhook'
+baseURL = 'https://spectralab.cc/'
+title = 'spectralab'
 theme = 'hugo-book'
 
 # Book theme params (https://github.com/alex-shpak/hugo-book)
 [params]
   BookTheme = 'auto'      # system color mode: auto = follow OS dark/light; also light | dark
   BookToC = true          # table of contents
-  BookSection = 'docs'    # main docs section
+  BookSection = 'docs/simuhook'    # main docs section
   BookDateFormat = '2006-01-02'
   BookRepo = 'https://github.com/abojaber/simuhook'
-  BookEditPath = 'edit/main/docs/content'
+  BookEditLink = '{{ .Site.Params.BookRepo }}/edit/main/docs/{{ .Path }}'
 
 [markup]
   [markup.goldmark.renderer]

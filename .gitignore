@@ -1,5 +1,6 @@
 .blackboxcli/
-simuhook
+/simuhook
+src/simuhook
 logs/
 dist/
 

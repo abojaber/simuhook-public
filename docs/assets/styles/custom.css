@@ -75,3 +75,51 @@
 .markdown i.fa-brands {
   margin-inline-end: .25em;
 }
+
+/* ------------------------------------------------------------------ */
+/* Code snippet area — mode-aware (solid black in dark mode)            */
+/* ------------------------------------------------------------------ */
+/* The built HTML bakes the light Chroma palette ("github") inline into */
+/* every token span, so in dark mode those light-theme colors are       */
+/* unreadable on black. We remap each baked inline color to its         */
+/* github-dark equivalent, scoped to the .highlight block only.         */
+/* Light mode (default) needs no overrides — baked palette is used.     */
+/* Auto mode resolves through the theme via prefers-color-scheme.       */
+
+/* dark: solid black background + readable base text */
+:root[data-theme="dark"] .markdown .highlight pre,
+:root[data-theme="dark"] .markdown .highlight table td pre,
+:root[data-theme="dark"] .markdown .highlight table td:first-child pre {
+  background-color: #000000 !important; /* solid black override */
+  color: #e6edf3 !important;            /* dark-mode base text  */
+}
+
+/* auto (system dark): same treatment, mirrors themes.css @media block */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] .markdown .highlight pre,
+  :root[data-theme="auto"] .markdown .highlight table td pre,
+  :root[data-theme="auto"] .markdown .highlight table td:first-child pre {
+    background-color: #000000 !important;
+    color: #e6edf3 !important;
+  }
+}
+
+/* Remap baked light token colors -> dark-readable equivalents.
+   Attribute selectors target the inline `style="color:#..."` spans. */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#1f2328"] { color: #e6edf3 !important; } /* fg/attr/class */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#57606a"] { color: #8b949e !important; } /* comment   */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#cf222e"] { color: #ff7b72 !important; } /* keyword   */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#0550ae"] { color: #79c0ff !important; } /* const/tag/num/op */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#0a3069"] { color: #a5d6ff !important; } /* string    */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#6639ba"] { color: #d2a8ff !important; } /* builtin/entity/func */
+:root[data-theme="dark"] .markdown .highlight pre span[style*="color:#953800"] { color: #ffa657 !important; } /* variable  */
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#1f2328"] { color: #e6edf3 !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#57606a"] { color: #8b949e !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#cf222e"] { color: #ff7b72 !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#0550ae"] { color: #79c0ff !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#0a3069"] { color: #a5d6ff !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#6639ba"] { color: #d2a8ff !important; }
+  :root[data-theme="auto"] .markdown .highlight pre span[style*="color:#953800"] { color: #ffa657 !important; }
+}

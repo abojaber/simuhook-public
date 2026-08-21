@@ -10,8 +10,8 @@ Simuhook is a mock HTTP server written in Go. Users define endpoints as YAML fil
   - `--addr :8080` — listen address (env `PORT`)
   - `--stubs ../stubs` — stubs directory (env `STUBS_DIR`)
   - `--log-dir logs` — log directory (env `LOG_DIR`)
+  - `--proxy /path=https://destination` — transparent proxy rule (repeatable, env none): when no stub matches a request whose path starts with `/path`, forward it verbatim to the destination and return the upstream response unchanged. Longest prefix wins; `/` is a catch-all. (Phase 20)
   - `--tui auto|on|off` — dashboard mode. `auto` (default): TUI on a TTY, line output otherwise.
-  - `--recent N` (default 50) — recent-log ring buffer size (also the TUI feed depth)
   - `--max-log-body N` (default 0 = unlimited, env `LOG_MAX_BODY`) — caps `body`/`response_body` length in `LogEntry` at capture time (rune-safe truncation); never affects the actual HTTP response bytes or echo/template rendering
   - `--help`, `--version` per CLI conventions
 
@@ -162,6 +162,15 @@ The server exposes only the mock surface: requests are matched against stubs and
 - **Approved substitutions (verified against gofakeit v7.15.0 source):** `ULID` → `gofakeit.ID()` (D9, no ULID exists; FuncMap key stays `ULID`, 20-char URL-safe); `Sentence`/`Paragraph` are deprecated with silently-ignored args (D10, accepted as-is + documented); `Price` → zero-arg closure over `gofakeit.Price(0.01, 999.99)` formatted `"%.2f"` (D11); `CreditCardNumber` wrapped with the mandatory `nil` arg.
 - **Non-JSON body + JSONPath → `""`** for every path including `$` (D12). `{{UUID}}` (func) and `{{.UUID}}` (field) are separate namespaces — no collision (EC1).
 - New: `stubs/template-showcase.yaml` demo stub (faker + JSONPath echo).
+
+#### PROXY-001/002 — Transparent forwarding with full-fidelity logging (`[Should]`, done 2026-08-19)
+- **Problem:** teams integrate against real third-party webhook APIs (Stripe, GitHub, …). Simuhook mocked the server side but had no way to test how *your* service behaves against a live API while capturing traffic.
+- **Decision (D1):** a `--proxy /path=https://destination` flag (repeatable) adds a transparent forwarding fallback. When **no stub matches** (`Registry.Match` returns nil), the longest-prefix `--proxy` rule whose path prefix matches wins (`/` is a catch-all, `MatchProxy` in `proxy.go`); the request is forwarded via `ForwardRequest` (stdlib `http.DefaultTransport`) and the upstream response is returned **unchanged** (status, headers, body). The destination is a base URL: the caller's original path + query are carried over verbatim — no prefix stripping or rewriting (D1 = A).
+- **Hop-by-hop handling (RFC 7230 §6.1):** `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `Proxy-Connection`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade` are stripped before forwarding; `X-Forwarded-For` is appended with the caller's client IP (prior value preserved after the comma).
+- **Fidelity logging (D2/D3, PROXY-002):** new **additive** `LogEntry` fields — `raw_headers` (`map[string][]string`, every incoming value, multi-value preserved), `upstream_request` (`UpstreamRequestLog{method,url,headers,body}` — the exact outbound request actually issued after stripping + XFF), `upstream_response` (`UpstreamResponseLog{status,headers,body}` — full upstream reply). The legacy first-value `headers`/`response_headers` fields and ALL TUI surfaces are untouched (D3 = B — no re-type, no breaking change). `ForwardRequest` returns the built outbound `*http.Request` so the handler can log it.
+- **Failed round trips (D4):** unreachable destinations still log `upstream_request` (the exact attempt — URL, headers, body) so it's diagnosable from the log alone, plus `response_status` 502 and `"proxy error: …"` body; `upstream_response` is absent. Normal stub-served requests never populate the fidelity fields (proxy-scoped only).
+- **Stubs win:** registry matching happens before proxy fallback, so a local stub always beats a proxy rule (`TestHandler_StubTakesPriorityOverProxy`).
+- **Design note:** Go's stdlib `net/http` server rejects truly malformed header *lines* (e.g. a header with no colon) at the parser level with a 400 before the handler runs — such requests cannot be captured via `ServeHTTP`. Anyone hitting that edge needs a raw listener-level tee (out of scope, documented in `20-proxy-forwarding.md`). Valid-but-weird values (`Accept: application/json; foo; bar`) and invalid JSON bodies ARE captured verbatim.
 
 ### Internal packages / conventions
 - `net/http` (stdlib) — no external HTTP framework

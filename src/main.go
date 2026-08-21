@@ -32,6 +32,27 @@ func main() {
 	tui := flag.String("tui", "auto", "dashboard mode: auto|on|off")
 	recent := flag.Int("recent", 50, "recent log ring buffer size")
 	maxLogBody := flag.Int("max-log-body", 0, "cap stored request/response body size in bytes for logs and dashboard (0 = unlimited)")
+	var proxyRules []mock.ProxyRule
+	flag.Func("proxy", "transparent proxy rule: /path=https://destination (repeatable)", func(v string) error {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return fmt.Errorf("empty proxy rule")
+		}
+		eq := strings.Index(v, "=")
+		if eq <= 0 || eq == len(v)-1 {
+			return fmt.Errorf("want /path=https://destination")
+		}
+		path := v[:eq]
+		dest := v[eq+1:]
+		if !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("path %q must start with /", path)
+		}
+		if !strings.Contains(dest, "://") {
+			return fmt.Errorf("destination %q must include scheme (http:// or https://)", dest)
+		}
+		proxyRules = append(proxyRules, mock.ProxyRule{Path: path, Destination: dest})
+		return nil
+	})
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -192,6 +213,7 @@ func main() {
 		Registry:     registry,
 		Observers:    observers,
 		MaxBodyBytes: *maxLogBody,
+		ProxyRules:   proxyRules,
 	}))
 
 	srv := &http.Server{Addr: *addr, Handler: mux}

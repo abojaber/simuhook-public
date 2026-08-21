@@ -16,6 +16,7 @@ type Handler struct {
 	observers    []func(LogEntry)
 	now          func() time.Time
 	maxBodyBytes int
+	proxyRules   []ProxyRule
 }
 
 // HandlerConfig wires a Handler to its collaborators.
@@ -30,6 +31,12 @@ type HandlerConfig struct {
 	// to the actual HTTP response, nor echo/template rendering — both use
 	// the full, uncapped body.
 	MaxBodyBytes int
+
+	// ProxyRules enable transparent forwarding: when no stub matches a
+	// request and a rule's Path prefix matches, the request is forwarded
+	// as-is to the rule's Destination, recorded, and the response returned
+	// unchanged. Empty (default) disables proxying.
+	ProxyRules []ProxyRule
 }
 
 // NewHandler creates a new Handler. It panics if cfg.Registry is nil.
@@ -46,6 +53,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		observers:    append(make([]func(LogEntry), 0, len(cfg.Observers)), cfg.Observers...),
 		now:          now,
 		maxBodyBytes: cfg.MaxBodyBytes,
+		proxyRules:   append(make([]ProxyRule, 0, len(cfg.ProxyRules)), cfg.ProxyRules...),
 	}
 }
 
@@ -81,6 +89,88 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if ep == nil {
+		if rule := MatchProxy(r.URL.Path, h.proxyRules); rule != nil {
+			// Proxy fallback: forward the request as-is to the
+			// destination, record the round trip, and return the
+			// upstream response unchanged.
+			webhookName = "_proxy"
+			responseStatus = http.StatusBadGateway
+			responseBody = []byte("")
+			upstreamHeaders := make(map[string]string)
+
+			var upstreamReq *UpstreamRequestLog
+			var upstreamResp *UpstreamResponseLog
+
+			resp, out, dur, ferr := ForwardRequest(r, rule.Destination, body)
+			if out != nil {
+				// Capture the exact outbound request (as built, before
+				// the round trip) so a debugging partner can verify
+				// what was/would have been sent upstream — even when
+				// the round trip fails (unreachable destination, TLS
+				// error, etc.).
+				upstreamReq = &UpstreamRequestLog{
+					Method:  out.Method,
+					URL:     out.URL.String(),
+					Headers: cloneHeaderValues(out.Header),
+					Body:    string(body),
+				}
+			}
+			if ferr != nil {
+				responseBody = []byte(fmt.Sprintf("proxy error: %v", ferr))
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(responseStatus)
+				w.Write(responseBody)
+			} else {
+				// Capture upstream response headers (multi-value
+				// fidelity for the log) and write them back to the
+				// caller unchanged.
+				upstreamHeaders = firstValues(resp.Header)
+				upstreamResp = &UpstreamResponseLog{
+					Status:  resp.StatusCode,
+					Headers: cloneHeaderValues(resp.Header),
+					Body:    "",
+				}
+				responseStatus = resp.StatusCode
+				if resp.Body != nil {
+					responseBody, _ = io.ReadAll(resp.Body)
+					resp.Body.Close()
+					upstreamResp.Body = string(responseBody)
+				}
+				for k, v := range upstreamHeaders {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(responseStatus)
+				w.Write(responseBody)
+			}
+
+			latency := dur
+			if latency == 0 {
+				latency = h.now().Sub(start)
+			}
+			entry := LogEntry{
+				Timestamp:        start.UTC().Format(time.RFC3339Nano),
+				RequestID:        requestID,
+				Webhook:          webhookName,
+				Method:           r.Method,
+				Path:             r.URL.Path,
+				Headers:          headers,
+				Body:             truncateRuneSafe(string(body), h.maxBodyBytes),
+				Query:            query,
+				ResponseStatus:   responseStatus,
+				LatencyMs:        float64(latency.Microseconds()) / 1000.0,
+				Matched:          true,
+				ResponseHeaders:  upstreamHeaders,
+				ResponseBody:     truncateRuneSafe(string(responseBody), h.maxBodyBytes),
+				ProxyDestination: rule.Destination,
+				RawHeaders:       cloneHeaderValues(r.Header),
+				UpstreamRequest:  upstreamReq,
+				UpstreamResponse: upstreamResp,
+			}
+			for _, o := range h.observers {
+				o(entry)
+			}
+			return
+		}
 		responseStatus = http.StatusNotFound
 		responseBody = []byte(`{"error":"no matching endpoint"}`)
 		w.Header().Set("Content-Type", "application/json")

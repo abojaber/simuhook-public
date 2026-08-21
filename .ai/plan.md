@@ -17,13 +17,18 @@
       built; GitHub release creation pending auth (blocked step, see below).
 - [x] **Richer templates (TPL-001/002)** — 27 gofakeit data generators + hand-rolled
       JSONPath extraction; D9–D16 approved, implemented + QA-verified 2026-08-16.
+- [ ] **Transparent proxy (PROXY-001/002)** — `--proxy /path=https://dest` forwarding
+      fallback with full-fidelity logging (`raw_headers`, `upstream_request`,
+      `upstream_response`); D1–D4 signed off 2026-08-19, implementation in progress.
 
 ## Active Priority
 
-1. **Publish the GitHub release** — `gh auth login` then
+1. **Finish the proxy feature (PROXY-001/002)** — implementation + tests done
+   (2026-08-19); remaining: run full QA verification, commit.
+2. **Publish the GitHub release** — `gh auth login` then
    `gh release create v0.1.0 --title "Simuhook v0.1.0" --notes-file dist/RELEASE_NOTES.md
    dist/simuhook-* dist/CHECKSUMS.txt` (binaries + notes + checksums ready in `dist/`).
-2. **Non-blocking QA test gaps (small, low-effort):**
+3. **Non-blocking QA test gaps (small, low-effort):**
    - D2 AC3/AC4: pin TZ=UTC byte-identical + `??:??:??` parse-failure tests (`12-dashboard-gap-closures.md`).
    - ADM-003: banner unit test, wide info-line assertion, admin-paths-fall-through test
      (`13-admin-url-residue.md`).

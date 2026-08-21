@@ -137,6 +137,39 @@ All funcs are niladic unless noted. Sources: existing funcs (unchanged) +
 > **`--max-log-body` / `LOG_MAX_BODY` (backlog: max-log-body-cap):** when set (> 0), `body` and `response_body` are truncated to at most N bytes at capture time, walking back to the nearest UTF-8 rune boundary (a split multi-byte rune is dropped rather than emitting invalid bytes). This is **capture-time-only** — it never affects the bytes written to the actual HTTP response, nor echo/template rendering, which always use the full, uncapped body. Default `0` = unlimited (current behavior, unchanged unless opted in).
 > **`response_variant` (backlog: response-variant-index):** present only for endpoints configured with a weighted/round-robin `responses:` list — the 0-based index of the variant `PickResponse` selected for this request. **Omitted entirely** (not `null`) when the endpoint used its singular `response:` (no variants configured) — a pointer field distinguishes "not applicable" from "variant index 0". Additive; existing log consumers can ignore it.
 
+### Proxy fields (Phase 20 / PROXY-002)
+
+Present only for proxy-forwarded requests (`webhook` = `"_proxy"`). All additive — existing log consumers can ignore them.
+
+```json
+{
+  "proxy_destination": "http://127.0.0.1:9191",
+  "raw_headers": {
+    "X-Debug": ["a", "b"],
+    "Content-Type": ["application/json"]
+  },
+  "upstream_request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:9191/api/orders",
+    "headers": {
+      "X-Debug": ["a", "b"],
+      "X-Forwarded-For": ["127.0.0.1"]
+    },
+    "body": "{\"broken\": json"
+  },
+  "upstream_response": {
+    "status": 201,
+    "headers": {"Content-Type": ["application/json"]},
+    "body": "{\"created\":true}"
+  }
+}
+```
+
+- `proxy_destination` — the destination URL from the matched proxy rule.
+- `raw_headers` — every incoming header value exactly as the client sent them (multi-value and repeated lines preserved); the legacy `headers` field keeps its first-value shape.
+- `upstream_request` — the exact outbound request built for the destination: method, full URL (destination + original path + query), all non-hop-by-hop headers with every value, and the verbatim body. **Populated even when the round trip fails** (the attempted request), so a failed forward is fully diagnosable from the log.
+- `upstream_response` — the full response received from the destination: status, all response headers (multi-value preserved as arrays), verbatim body. Absent (nil, omitted) when the round trip failed.
+
 ---
 
 ## CLI Signature
@@ -150,6 +183,13 @@ Flags:
   --log-dir  string   Log output directory (default "logs")
   --max-log-body int  Cap stored request/response body size in bytes for logs
                        and dashboard; 0 = unlimited (default 0)
+  --proxy    string   Transparent proxy rule: /path=https://destination.
+                       Repeatable (up to one rule per destination). When no stub
+                       matches a request whose path begins with /path, the request
+                       is forwarded verbatim (destination + original path + query,
+                       hop-by-hop headers stripped, X-Forwarded-For appended) and
+                       the upstream response is returned unchanged. Longest prefix
+                       wins; the root rule "/" is a catch-all. (Phase 20 / PROXY-001)
 
 Environment variables (override defaults):
   PORT          string   Listen port (e.g. "9090")

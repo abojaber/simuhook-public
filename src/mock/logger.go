@@ -30,6 +30,46 @@ type LogEntry struct {
 	// pointer distinguishes "not applicable" (nil, omitted from JSON) from
 	// "variant index 0" (present, serializes as 0).
 	ResponseVariant *int `json:"response_variant,omitempty"`
+
+	// ProxyDestination is the upstream URL a proxy rule forwarded this
+	// request to. It is empty for normal mock responses.
+	ProxyDestination string `json:"proxy_destination,omitempty"`
+
+	// RawHeaders preserves every incoming header value exactly as the
+	// client sent them — including multi-value headers and repeated
+	// lines — whereas Headers collapses to the first value per name.
+	// Populated for proxy-forwarded requests so a debugging partner can
+	// see the client's exact payload, even if it is malformed or unusual.
+	RawHeaders map[string][]string `json:"raw_headers,omitempty"`
+
+	// UpstreamRequest is the request actually issued to the proxy
+	// destination (after hop-by-hop stripping and X-Forwarded-For
+	// injection), or nil when not proxied. Body is the exact bytes sent.
+	UpstreamRequest *UpstreamRequestLog `json:"upstream_request,omitempty"`
+
+	// UpstreamResponse is the response as received from the proxy
+	// destination (full multi-value headers, exact body), or nil when
+	// not proxied.
+	UpstreamResponse *UpstreamResponseLog `json:"upstream_response,omitempty"`
+}
+
+// UpstreamRequestLog records the exact request forwarded to a proxy
+// destination: the method and full URL (path + query as sent), all
+// non-hop-by-hop headers with every value, and the verbatim body.
+type UpstreamRequestLog struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+}
+
+// UpstreamResponseLog records the full response received from a proxy
+// destination: status, all response headers including multi-value ones,
+// and the verbatim body.
+type UpstreamResponseLog struct {
+	Status  int                 `json:"status"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
 }
 
 // Logger writes JSON log entries to per-webhook files under a log directory.

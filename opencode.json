@@ -6,25 +6,25 @@
     "ba": {
       "description": "Business Analyst — requirements, user stories, acceptance criteria for the webhook simulator",
       "mode": "primary",
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
       "prompt": "{file:.ai/agents/ba.md}"
     },
     "developer": {
       "description": "Developer — implements the webhook simulator in Go",
       "mode": "subagent",
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
       "prompt": "{file:.ai/agents/developer.md}"
     },
     "qa": {
       "description": "QA Engineer — tests the webhook simulator, verifies acceptance criteria",
       "mode": "subagent",
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
       "prompt": "{file:.ai/agents/qa.md}"
     },
     "architect": {
       "description": "System Architect — design and architecture documentation for the webhook simulator",
       "mode": "subagent",
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "xiaomi-token-plan-sgp/mimo-v2.5-pro",
       "prompt": "{file:.ai/agents/architect.md}"
     }
   }

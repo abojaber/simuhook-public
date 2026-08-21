@@ -111,20 +111,25 @@ Then  raw_headers, upstream_request, and upstream_response are all absent
 
 ## PROXY-003 — Raw listener-level tee for malformed requests `[Should]`
 
-**Status:** `draft` | **Decisions locked 2026-08-19 (D1–D6 approved)**
+**Status:** `ready` | **Decisions locked 2026-08-19, revised 2026-08-21 (D5 expanded, Q1–Q3 resolved)**
 
 **Story:**
-> As a developer debugging a broken integration, I want the raw bytes of proxy-bound requests captured verbatim — including requests Go's HTTP parser rejects (e.g. a header line with no colon) — so that I can see exactly what a buggy client sent, even when the request never reaches the handler.
+> As a developer debugging a broken integration, I want the raw bytes of proxy-bound requests AND responses captured verbatim — including requests Go's HTTP parser rejects (e.g. a header line with no colon) — so that I can see exactly what a buggy client sent and what the server replied, even when the request never reaches the handler.
 
-**Problem being solved:** Go's `net/http` server parses the request before our handler runs. A malformed header line (`Accept; json\r\n`, no colon) makes the stdlib server answer `400 Bad Request` itself — the request never reaches `mock.Handler`, so nothing is logged today. PROXY-002's structured log cannot capture what it never sees. The only capture point is one layer down: wrap the `net.Listener` so every accepted connection's raw reads pass through the tee on the way to Go's parser.
+**Problem being solved:** Go's `net/http` server parses the request before our handler runs. A malformed header line (`Accept; json\r\n`, no colon) makes the stdlib server answer `400 Bad Request` itself — the request never reaches `mock.Handler`, so nothing is logged today. PROXY-002's structured log cannot capture what it never sees. The only capture point is one layer down: wrap the `net.Listener` so every accepted connection's raw reads AND writes pass through the tee on the way to Go's parser.
 
 **Locked decisions:**
 - **D1 = A — path-based capture.** Only connections whose request-line path starts with a configured proxy prefix are captured. Stub-served requests and non-proxy paths on the same listener pass through untouched. This is the "proxy only, no change for simulate API" guarantee.
 - **D2 = A — auto-on when `--proxy` is set.** No new flags. When `len(proxyRules) == 0`, the listener is never wrapped — zero behavior change, zero overhead, no new files for mock-only runs.
-- **D3 = A — plain text dump.** Raw bytes go to `<log-dir>/_raw.log` as human-readable text (the point is to see the *exact* bytes), with a connection separator line.
-- **D4 = A — per-connection cap (~64 KB default).** A giant binary body can't balloon the log; mirrors the `--max-log-body` philosophy (capture cap never affects actual bytes served).
-- **D5 = A — request-only.** No response bytes captured in the tee. Upstream *responses* are already logged in full by PROXY-002's `upstream_response`; Go-rejected requests have no response to capture anyway.
+- **D3 = A — plain text dump.** Raw bytes go to `<log-dir>/_raw.log` as human-readable text with directional markers: `>>>` for request bytes (client→proxy), `<<<` for response bytes (proxy→client). Connection separator lines delimit entries. Non-printable bytes (outside 0x20–0x7E, `\t`, `\r`, `\n`) are hex-escaped as `\xNN`.
+- **D4 = A — per-connection cap (~64 KB default).** Shared across request + response bytes. A giant body can't balloon the log; mirrors the `--max-log-body` philosophy (capture cap never affects actual bytes served).
+- **D5 = B — request AND response capture.** Both `Read()` and `Write()` are intercepted on the client-facing `net.Conn`. Request bytes get `>>>` prefix lines, response bytes get `<<<` prefix lines. Both count against the shared 64 KB cap. Go's 400 response to a malformed request is also captured (valuable — user sees both the bad request AND the rejection).
 - **D6 = A — decide once per connection.** The capture decision is made from the first request line; keep-alive reuse on the same connection inherits the decision. Documented limitation.
+
+**Resolved defaults (accepted 2026-08-21):**
+- **Q1 — Over-capture acceptable.** Stub-served requests whose path starts with a proxy prefix will be captured (tee can't distinguish stub vs proxy from the request line alone). Accepted as a superset of the proxy surface.
+- **Q2 — Unbounded `_raw.log` acceptable.** 64 KB/conn cap is the only limit. No rotation in this iteration.
+- **Q3 — Synchronous sink writes acceptable.** A slow log disk can stall a proxy-path Read/Write, never fail it. Best-effort debugging tool.
 
 **ACs:**
 ```
@@ -132,15 +137,16 @@ Given a server started with --proxy /api=https://api.example.com
 When  a client sends a well-formed request for /api/orders (all headers valid)
 Then  1. the request is proxied normally (unchanged from PROXY-001)
       2. _raw.log contains the connection separator with the matching rule
-      3. _raw.log contains the raw request bytes byte-for-byte (request line, headers, body)
+      3. _raw.log contains the raw request bytes with >>> markers (request line, headers, body)
+      4. _raw.log contains the raw response bytes with <<< markers (status line, headers, body)
 
 Given a client sends a request whose path starts with a proxy prefix but has
       a malformed header line (e.g. "Accept; json" with no colon)
 When  Go's net/http server rejects it with 400 before the handler runs
 Then  1. the caller receives the standard 400 (unchanged Go behavior)
-      2. _raw.log still records the full raw request bytes verbatim, including
-         the malformed header line
-      3. no JSON log entry is written (webhook "_proxy" absent — handler never ran)
+      2. _raw.log still records the full raw request bytes verbatim with >>> markers
+      3. _raw.log records Go's 400 response bytes with <<< markers
+      4. no JSON log entry is written (webhook "_proxy" absent — handler never ran)
 
 Given a request arrives for a path that matches NO proxy rule (e.g. /health)
       on the same listener
@@ -159,11 +165,13 @@ Then  no capture occurs for that connection (D6 fallback: no-capture)
 
 Given a proxy-bound request with a body larger than the 64 KB capture cap
 When  it is read
-Then  _raw.log stores the first 64 KB of the connection, then stops teeing
+Then  _raw.log stores the first 64 KB (request + response combined), then stops teeing
       (the bytes still flow to Go's parser uncapped — capture cap only)
 ```
 
-**Out of scope (locked):** TLS termination (simuhook is plain HTTP), HTTP/2 prior-knowledge, response-byte capture, per-request re-decision on keep-alive connections (D6), any change to the JSON `LogEntry` schema or TUI.
+**Design:** reviewed and approved 2026-08-21. Types: `RawTeeListener` (wraps `net.Listener`), `RawTeeConn` (wraps `net.Conn`, intercepts `Read()` + `Write()`), `rawTeeSink` (mutex-guarded append to `_raw.log`, lazily opened, fail-open). 12 tests. Full design in the Architect's delivery (session 2026-08-21).
+
+**Out of scope (locked):** TLS termination (simuhook is plain HTTP), HTTP/2 prior-knowledge, per-request re-decision on keep-alive connections (D6), any change to the JSON `LogEntry` schema or TUI, upstream connection capture (proxy→target bytes — already logged by PROXY-002's structured fields).
 
 ---
 

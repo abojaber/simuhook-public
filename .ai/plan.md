@@ -20,6 +20,10 @@
 - [ ] **Transparent proxy (PROXY-001/002)** — `--proxy /path=https://dest` forwarding
       fallback with full-fidelity logging (`raw_headers`, `upstream_request`,
       `upstream_response`); D1–D4 signed off 2026-08-19, implementation in progress.
+- [ ] **Raw listener-level tee (PROXY-003)** — captures raw request+response bytes at
+      `net.Conn` level before Go's parser rejects malformed requests; `>>>`/`<<<` markers
+      in `<log-dir>/_raw.log`; D1–D6 locked 2026-08-19, revised 2026-08-21 (D5=request+response),
+      design approved 2026-08-21, ready for implementation.
 
 ## Active Priority
 

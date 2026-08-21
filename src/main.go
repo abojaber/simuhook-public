@@ -197,6 +197,16 @@ func main() {
 		fmt.Println()
 	}
 
+	// Wrap the listener with a raw-byte tee when proxying: malformed
+	// requests that Go's net/http parser rejects before the handler runs
+	// (e.g. a header line with no colon) are captured to _raw.log (PROXY-003).
+	// Mock-only runs never wrap — identity pass-through, no file, zero overhead.
+	if len(proxyRules) > 0 {
+		rtl := mock.NewRawTeeListener(ln, proxyRules, *logDir)
+		defer rtl.Close()
+		ln = rtl
+	}
+
 	mux := http.NewServeMux()
 
 	// Webhook handler — matched & unmatched requests are logged

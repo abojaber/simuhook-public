@@ -181,6 +181,12 @@ The server exposes only the mock surface: requests are matched against stubs and
 - **12 tests:** well-formed proxy request captured, malformed header+400 captured (raw TCP), non-proxy path not captured, no-proxy identity, fragmented reads, 64 KB cap, budget exceeded, concurrent Read/Write under `-race`, keep-alive inherits, no-proxy no-wrap, concurrent sink writes, non-printable hex-escaped.
 - **Limitations (documented, accepted):** keep-alive decision inherited from first request line (D6); 8 KB budget can be forced by adversarial client; 64 KB cap shared (large request may exhaust before response); single `_raw.log` file (serialized writes); no TLS (plain HTTP only); no HTTP/2; `<<<` shows Go's wire output (may include server-added headers like `Date`).
 
+#### PROXY-004 — Proxy TUI view with structured log entries (`[Should]`, done 2026-08-21)
+- **Problem:** the proxy view (viewMode == 1) showed only raw bytes from the raw tee ring buffer. Valid proxy requests appeared in the main dashboard feed mixed with stub traffic, but there was no dedicated view to monitor proxy activity separately.
+- **Decision:** the proxy view shows structured proxy log entries filtered from `StatsTracker.RecentLogs` where `Webhook == "_proxy"`, rendered using the same `summaryLine()` pipeline as the main feed. Below the structured entries, a "Raw Bytes" section shows the raw tee ring buffer lines. The view auto-scrolls when live-follow is active.
+- **Implementation:** `proxyEntries()` helper filters recent logs; `buildProxyContent()` builds the full view content (structured entries + raw bytes); `renderRawLogView()` renders header ("PROXY REQUESTS"), viewport, and footer with counts. Tick handler calls `buildProxyContent()` on each tick. Key `1` = main dashboard, `2` = proxy view.
+- **Tests:** `TestProxyView_StructuredEntries`, `TestProxyView_NoProxyEntries`, `TestProxyView_FiltersOnlyProxyWebhook`, `TestProxyView_NilSourceWithProxyLogs`, `TestProxyView_RawBytesSection`, `TestProxyEntries_Empty`, `TestProxyEntries_Mixed`.
+
 ### Internal packages / conventions
 - `net/http` (stdlib) — no external HTTP framework
 - Interfaces for testability (`StatsSource` for the dashboard; `http.RoundTripper` when mocking HTTP)

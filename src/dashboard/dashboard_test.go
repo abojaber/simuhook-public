@@ -47,7 +47,7 @@ func TestModelUpdateTickMsg(t *testing.T) {
 			},
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	newModel, cmd := m.Update(tickMsg(time.Now()))
 
 	// Verify snapshot was read from the returned model
@@ -69,7 +69,7 @@ func TestModelUpdateTickMsg(t *testing.T) {
 }
 
 func TestModelUpdateQuit(t *testing.T) {
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 
 	// 'q' key should quit
 	_, cmd := m.Update(tea.KeyMsg{
@@ -114,7 +114,7 @@ func TestModelView(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -134,7 +134,7 @@ func TestModelView(t *testing.T) {
 }
 
 func TestInitReturnsCmd(t *testing.T) {
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 	cmd := m.Init()
 	if cmd == nil {
 		t.Error("expected non-nil cmd from Init")
@@ -153,7 +153,7 @@ func TestModelViewEmpty(t *testing.T) {
 			TotalLogs:  0,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -182,7 +182,7 @@ func TestModelUnmatchedEntry(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 	m.renderFeed()
 
@@ -198,7 +198,7 @@ func TestWindowSizeMsg(t *testing.T) {
 			RecentLogs: []mock.LogEntry{},
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	newM, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 
 	updated := newM.(Model)
@@ -224,7 +224,7 @@ func TestModelUpdateRefreshKey(t *testing.T) {
 			RecentLogs:    []mock.LogEntry{},
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Change the source to a NEW snapshot — this is what happens in production
 	// when new requests come in between refreshes.
@@ -287,7 +287,7 @@ func TestModelPromptEnter(t *testing.T) {
 			TotalLogs: 2,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Press '/' to enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -326,7 +326,7 @@ func TestModelPromptEnter(t *testing.T) {
 
 func TestModelPromptCancel(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -348,7 +348,7 @@ func TestModelPromptCancel(t *testing.T) {
 
 func TestModelPromptQuit(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -381,7 +381,7 @@ func TestModelClearFilter(t *testing.T) {
 			TotalLogs: 1,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	// Pre-populate last snapshot for render
 	m.last = src.Snapshot()
 
@@ -398,7 +398,7 @@ func TestModelClearFilter(t *testing.T) {
 
 func TestModelToggleHelp(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Toggle on
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
@@ -426,7 +426,7 @@ func TestModelFilteredView(t *testing.T) {
 			TotalLogs: 3,
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.Snapshot()
 
 	// No filter — all entries visible
@@ -483,7 +483,7 @@ func TestModelFilterFooter(t *testing.T) {
 			TotalLogs: 2,
 		},
 	}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.Snapshot()
 
 	// Set a filter and verify footer contains filter info
@@ -511,7 +511,7 @@ func TestModelFilterFooter(t *testing.T) {
 
 func TestModelPromptBackspace(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -552,7 +552,7 @@ func TestModelPromptBackspace(t *testing.T) {
 
 func TestModelPromptView(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -576,7 +576,7 @@ func TestModelPromptView(t *testing.T) {
 // fix it in place instead of losing their input.
 func TestModelInvalidFilterStatus(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -607,7 +607,7 @@ func TestModelInvalidFilterStatus(t *testing.T) {
 
 func TestModelHelpView(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	m.showHelp = true
 	view := m.View()
@@ -624,7 +624,7 @@ func TestModelHelpView(t *testing.T) {
 
 func TestModelCtrlHBackspace(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -649,7 +649,7 @@ func TestModelCtrlHBackspace(t *testing.T) {
 // A standalone 'q' press (separate KeyMsg) still cancels (TestModelPromptQuit).
 func TestModelPromptBatchedTextWithQ(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -673,7 +673,7 @@ func TestModelPromptBatchedTextWithQ(t *testing.T) {
 // prompt entirely (regression: esc must cancel even after batched text entry).
 func TestModelPromptEscCancelsFromBatched(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m2 := updated.(Model)
@@ -708,7 +708,7 @@ func TestModelHeaderConfig(t *testing.T) {
 			{ID: "orders", Method: "POST", Path: "/webhooks/order"},
 		},
 	}
-	m := newModel(src, eps, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 80, 24)
+	m := newModel(src, eps, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 80, 24)
 	m.last = src.Snapshot()
 
 	view := m.View()
@@ -730,7 +730,7 @@ func TestModelHeaderConfig(t *testing.T) {
 func TestModelHeaderEndpointRefresh(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 	eps := &fakeEndpoints{eps: []*mock.Endpoint{{ID: "a", Method: "GET", Path: "/a"}}}
-	m := newModel(src, eps, Config{}, 80, 24)
+	m := newModel(src, eps, nil, Config{}, 80, 24)
 
 	// Endpoint added at runtime (file watcher hot-reload) — tick must pick it up.
 	eps.eps = append(eps.eps, &mock.Endpoint{ID: "b", Method: "POST", Path: "/b"})
@@ -743,7 +743,7 @@ func TestModelHeaderEndpointRefresh(t *testing.T) {
 
 func TestModelHeaderNoEndpoints(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{Addr: ":8080"}, 80, 24)
+	m := newModel(src, nil, nil, Config{Addr: ":8080"}, 80, 24)
 	m.last = src.Snapshot()
 	view := m.View()
 	if strings.Contains(view, "Endpoints:") {
@@ -763,7 +763,7 @@ func TestModelEndpointsSorted(t *testing.T) {
 			{ID: "alpha", Method: "POST", Path: "/a"},
 		},
 	}
-	m := newModel(src, eps, Config{}, 80, 24)
+	m := newModel(src, eps, nil, Config{}, 80, 24)
 
 	want := []string{"alpha", "ping", "zeta"}
 	for i, ep := range m.endpoints {
@@ -812,7 +812,7 @@ func TestRenderStatusTint(t *testing.T) {
 			TotalLogs:  uint64(len(entries)),
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.last = src.snap
 	m.renderFeed()
 	view := m.View()
@@ -890,7 +890,7 @@ func TestRenderEndpointStats(t *testing.T) {
 			{ID: "health", Method: "GET", Path: "/health"},
 		},
 	}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 
 	view := m.View()
@@ -931,7 +931,7 @@ func TestRenderEndpointStatsOrderStable(t *testing.T) {
 			{ID: "alpha", Method: "POST", Path: "/a"},
 		},
 	}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 
 	view1 := m.View()
@@ -964,7 +964,7 @@ func TestRenderEndpointStatsOrderStable(t *testing.T) {
 // ------------------- UXR-003 — live-follow pause/resume -------------------
 
 func TestModelLiveFollowDefault(t *testing.T) {
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 	if !m.liveFollow {
 		t.Error("expected liveFollow=true by default")
 	}
@@ -974,7 +974,7 @@ func TestModelLiveFollowToggle(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{
 		RecentLogs: []mock.LogEntry{},
 	}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Press L — should pause.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
@@ -1012,7 +1012,7 @@ func TestModelLiveFollowPausePreservesOffset(t *testing.T) {
 			TotalLogs:  uint64(len(entries)),
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	// Ensure we start at the bottom.
@@ -1072,7 +1072,7 @@ func TestModelLiveFollowPausePreservesOffset(t *testing.T) {
 
 func TestModelLiveFollowPromptSwallowsL(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -1111,7 +1111,7 @@ func TestModelLiveFollowResumeOnScrollToBottom(t *testing.T) {
 			TotalLogs:  uint64(len(entries)),
 		},
 	}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.view.GotoBottom()
@@ -1149,7 +1149,7 @@ func TestModelLiveFollowResumeOnScrollToBottom(t *testing.T) {
 // ------------------- UXR-004 — collapsible endpoints panel -------------------
 
 func TestModelCollapseEndpointsDefault(t *testing.T) {
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 	if !m.showEndpoints {
 		t.Error("expected showEndpoints=true by default")
 	}
@@ -1164,7 +1164,7 @@ func TestModelCollapseEndpointsToggle(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 24)
+	m := newModel(src, eps, nil, Config{}, 80, 24)
 	if m.headerHeight() != 3+1+3 {
 		t.Errorf("expected headerHeight=%d with 3 endpoints open, got %d", 3+1+3, m.headerHeight())
 	}
@@ -1198,7 +1198,7 @@ func TestModelCollapseEndpointsViewportHeight(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 24)
+	m := newModel(src, eps, nil, Config{}, 80, 24)
 
 	// Expanded: headerHeight = 3 + 1 + 2 = 6, viewport height = 24 - 6 - 1 = 17
 	if m.view.Height != 24-m.headerHeight()-1 {
@@ -1227,7 +1227,7 @@ func TestModelCollapseEndpointsViewportHeight(t *testing.T) {
 func TestModelCollapseEndpointsNoEndpoints(t *testing.T) {
 	// When no endpoints are registered, headerHeight should be 3 regardless of showEndpoints.
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	if m.headerHeight() != 3 {
 		t.Errorf("expected headerHeight=3 with no endpoints, got %d", m.headerHeight())
@@ -1242,7 +1242,7 @@ func TestModelCollapseEndpointsNoEndpoints(t *testing.T) {
 
 func TestModelCollapseEndpointsPromptSwallowsE(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -1270,7 +1270,7 @@ func TestRenderCollapsedEndpointsHeader(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 
 	// Collapsed — should show single "Endpoints: (2) ▾" line, no individual rows.
@@ -1305,7 +1305,7 @@ func TestModelFooterLiveStatus(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -1332,7 +1332,7 @@ func TestModelFooterLiveStatus(t *testing.T) {
 // TestModelHelpContainsNewKeys verifies L and e appear in help.
 func TestModelHelpContainsNewKeys(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.showHelp = true
 	view := m.View()
 	if !strings.Contains(view, "L       pause/resume live") {
@@ -1354,7 +1354,7 @@ func TestLayoutAutoCollapseShortHeight(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 
 	// Height 19 with endpoints → auto-collapsed.
-	m := newModel(src, eps, Config{}, 80, 19)
+	m := newModel(src, eps, nil, Config{}, 80, 19)
 	if m.showEndpoints {
 		t.Error("expected showEndpoints=false at height 19 with endpoints")
 	}
@@ -1363,7 +1363,7 @@ func TestLayoutAutoCollapseShortHeight(t *testing.T) {
 	}
 
 	// Height 20 → no auto-collapse, panel visible.
-	m2 := newModel(src, eps, Config{}, 80, 20)
+	m2 := newModel(src, eps, nil, Config{}, 80, 20)
 	if !m2.showEndpoints {
 		t.Error("expected showEndpoints=true at height 20")
 	}
@@ -1372,7 +1372,7 @@ func TestLayoutAutoCollapseShortHeight(t *testing.T) {
 	}
 
 	// Height 19 with NO endpoints → no auto-collapse.
-	m3 := newModel(src, nil, Config{}, 80, 19)
+	m3 := newModel(src, nil, nil, Config{}, 80, 19)
 	if !m3.showEndpoints {
 		t.Error("expected showEndpoints=true at height 19 without endpoints")
 	}
@@ -1391,7 +1391,7 @@ func TestLayoutAutoCollapseExpandable(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 
 	// Auto-collapsed at height 19.
-	m := newModel(src, eps, Config{}, 80, 19)
+	m := newModel(src, eps, nil, Config{}, 80, 19)
 	if m.showEndpoints {
 		t.Fatal("expected auto-collapsed at height 19")
 	}
@@ -1431,7 +1431,7 @@ func TestLayoutResizeReexpands(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 
 	// Start at height 19 — auto-collapsed.
-	m := newModel(src, eps, Config{}, 80, 19)
+	m := newModel(src, eps, nil, Config{}, 80, 19)
 	if m.showEndpoints {
 		t.Fatal("expected auto-collapsed at height 19")
 	}
@@ -1459,7 +1459,7 @@ func TestLayoutResizeUserChoicePreserved(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
 
 	// Start at height 19 — auto-collapsed.
-	m := newModel(src, eps, Config{}, 80, 19)
+	m := newModel(src, eps, nil, Config{}, 80, 19)
 
 	// User explicitly expands (press e — overrides auto-collapse).
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
@@ -1511,7 +1511,7 @@ func TestRenderConfigNarrow(t *testing.T) {
 	cfg := Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}
 
 	for _, width := range []int{80, 79} {
-		m := newModel(src, eps, cfg, width, 24)
+		m := newModel(src, eps, nil, cfg, width, 24)
 		m.last = src.snap
 		view := m.View()
 		if strings.Contains(view, "Admin:") {
@@ -1548,7 +1548,7 @@ func TestRenderFeedTruncatedNarrow(t *testing.T) {
 	}
 
 	// Width 60 — latency segment present (60 is not < 60).
-	m := newModel(src, nil, Config{}, 60, 24)
+	m := newModel(src, nil, nil, Config{}, 60, 24)
 	m.last = src.snap
 	m.renderFeed()
 	view := m.View()
@@ -1557,7 +1557,7 @@ func TestRenderFeedTruncatedNarrow(t *testing.T) {
 	}
 
 	// Width 59 — latency segment absent.
-	m2 := newModel(src, nil, Config{}, 59, 24)
+	m2 := newModel(src, nil, nil, Config{}, 59, 24)
 	m2.last = src.snap
 	m2.renderFeed()
 	view2 := m2.View()
@@ -1592,7 +1592,7 @@ func TestLayoutViewportHeightClamp(t *testing.T) {
 	// Height 5, width 80, 5 endpoints → auto-collapsed (height < 20).
 	// headerHeight = 3 + 1 (collapsed heading) = 4.
 	// viewport height = 5 - 4 - 1 = 0 → clamped to 1.
-	m := newModel(src, eps, Config{}, 80, 5)
+	m := newModel(src, eps, nil, Config{}, 80, 5)
 	if m.view.Height != 1 {
 		t.Errorf("expected viewport height clamped to 1, got %d", m.view.Height)
 	}
@@ -1608,7 +1608,7 @@ func TestLayoutViewportHeightClamp(t *testing.T) {
 	}
 
 	// Height 5, no endpoints — headerHeight = 3, viewport = 5-3-1 = 1 (no clamp needed).
-	m3 := newModel(src, nil, Config{}, 80, 5)
+	m3 := newModel(src, nil, nil, Config{}, 80, 5)
 	if m3.view.Height != 1 {
 		t.Errorf("expected viewport height 1, got %d", m3.view.Height)
 	}
@@ -1622,7 +1622,7 @@ func TestRenderPromptHighlight(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.ANSI)
 
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.prompting = true
 	m.prompt = "ep:ping orders"
 
@@ -1649,7 +1649,7 @@ func TestRenderPromptHighlightAllTokens(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.ANSI)
 
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.prompting = true
 	m.prompt = "ep:ping method:POST status:2"
 
@@ -1669,7 +1669,7 @@ func TestRenderPromptHighlightEmpty(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.ANSI)
 
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.prompting = true
 	m.prompt = ""
 
@@ -1690,7 +1690,7 @@ func TestRenderPromptHighlightEmpty(t *testing.T) {
 
 func TestModelPromptInvalidStatus(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -1747,7 +1747,7 @@ func TestModelPromptInvalidStatus(t *testing.T) {
 
 func TestModelPromptErrClearsOnEdit(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Manually set prompt error state (simulating after invalid enter).
 	m.prompting = true
@@ -1775,7 +1775,7 @@ func TestRenderPromptErrShows(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.ANSI)
 
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.prompting = true
 	m.prompt = "status:abc"
 	m.promptErr = "invalid status: status:abc"
@@ -1798,7 +1798,7 @@ func TestRenderPromptErrShows(t *testing.T) {
 
 func TestModelPromptErrClearedOnCancel(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Simulate prompt with error after invalid enter.
 	m.prompting = true
@@ -1838,7 +1838,7 @@ func TestRenderFilterChip(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 
 	// No filter → no chip in heading.
@@ -1875,7 +1875,7 @@ func TestRenderFilterChipZero(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 
 	// Zero filter → no chip.
@@ -1897,7 +1897,7 @@ func TestFilterChipClears(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 	m.showEndpoints = false
 	m.filter = Filter{Endpoint: "ping"}
@@ -1929,7 +1929,7 @@ func TestRenderFilterChipCollapsed(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, eps, Config{}, 80, 30)
+	m := newModel(src, eps, nil, Config{}, 80, 30)
 	m.last = src.snap
 	m.showEndpoints = false // collapsed
 	m.filter = Filter{Endpoint: "ping"}
@@ -1951,7 +1951,7 @@ func TestRenderFilterChipCollapsed(t *testing.T) {
 // impossible to type.
 func TestModelPromptSpaceTyping(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = updated.(Model)
 
@@ -1986,7 +1986,7 @@ func TestModelPromptSpaceTyping(t *testing.T) {
 // for the PTY harness finding).
 func TestModelPromptSlashOpens(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = updated.(Model)
 	if !m.prompting {
@@ -2033,7 +2033,7 @@ func pinLocalZone(t *testing.T, name string, offset int) {
 func TestModelExpandToggleEnter(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2083,7 +2083,7 @@ func TestModelExpandOnlyOneAtATime(t *testing.T) {
 	// Use many entries so scrolling works (viewport height < total lines).
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2118,7 +2118,7 @@ func TestModelExpandOnlyOneAtATime(t *testing.T) {
 func TestModelExpandSurvivesTick(t *testing.T) {
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2149,7 +2149,7 @@ func TestModelExpandSurvivesTick(t *testing.T) {
 func TestModelExpandAutoClearsWhenEntryLeavesRing(t *testing.T) {
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.expandedID = "req-0"
@@ -2183,7 +2183,7 @@ func TestModelExpandAutoClearsWhenFilteredOut(t *testing.T) {
 		{RequestID: "req-1", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2225,7 +2225,7 @@ func TestModelExpandAutoClearsWhenFilteredOut(t *testing.T) {
 
 func TestModelExpandEmptyFeedNoPanic(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: []mock.LogEntry{}, TotalLogs: 0}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2258,7 +2258,7 @@ func TestModelExpandEmptyFeedNoPanic(t *testing.T) {
 func TestModelExpandPromptEnterStillAppliesFilter(t *testing.T) {
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 
 	// Enter prompt mode.
@@ -2290,7 +2290,7 @@ func TestModelExpandNoRequestIDNoop(t *testing.T) {
 		{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/noid", ResponseStatus: 200, Webhook: "noid", LatencyMs: 1.0},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2308,7 +2308,7 @@ func TestModelExpandNoRequestIDNoop(t *testing.T) {
 func TestModelEscClearsExpansion(t *testing.T) {
 	entries := entriesWithIDs(2)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.expandedID = "req-0"
@@ -2335,7 +2335,7 @@ func TestModelEscClearsExpansion(t *testing.T) {
 func TestModelClearKeyClearsExpansion(t *testing.T) {
 	entries := entriesWithIDs(2)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2370,7 +2370,7 @@ func TestModelClearKeyClearsExpansion(t *testing.T) {
 func TestFeedLineToEntryMapping(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2402,7 +2402,7 @@ func TestFeedLineToEntryMappingFiltered(t *testing.T) {
 		{RequestID: "req-4", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/other", ResponseStatus: 404, Webhook: "other", LatencyMs: 1.0},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.filter = Filter{Endpoint: "health"}
 	m.renderFeed()
@@ -2443,7 +2443,7 @@ func TestFeedLineToEntryMappingExpanded(t *testing.T) {
 		Method: "POST", Path: "/test2", ResponseStatus: 201, Webhook: "test2", LatencyMs: 2.0,
 	}}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -2477,7 +2477,7 @@ func TestFeedLineToEntryMappingExpanded(t *testing.T) {
 func TestFeedMapPlaceholderLines(t *testing.T) {
 	// Empty feed.
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: []mock.LogEntry{}, TotalLogs: 0}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2506,7 +2506,7 @@ func TestFeedMapPlaceholderLines(t *testing.T) {
 
 func TestFeedSelectedIdxBounds(t *testing.T) {
 	// Nil maps (before first render).
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 	if m.selectedIdx() != -1 {
 		t.Errorf("expected -1 for nil maps, got %d", m.selectedIdx())
 	}
@@ -2522,7 +2522,7 @@ func TestFeedSelectedIdxBounds(t *testing.T) {
 	// the viewport does not move it; moving the cursor moves the selection.
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m = newModel(src, nil, Config{}, 80, 24)
+	m = newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2556,7 +2556,7 @@ func TestRenderDetailFields(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "abc-123"
 	m.renderFeed()
@@ -2586,7 +2586,7 @@ func TestRenderDetailEmptyMaps(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -2617,7 +2617,7 @@ func TestRenderDetailSortedKeys(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -2663,7 +2663,7 @@ func TestRenderDetailSanitizesBody(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -2699,7 +2699,7 @@ func TestRenderDetailTruncatesToWidth(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 40, 24)
+	m := newModel(src, nil, nil, Config{}, 40, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -2721,7 +2721,7 @@ func TestRenderSelectionHighlight(t *testing.T) {
 
 	entries := entriesWithIDs(2)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2769,7 +2769,7 @@ func TestRenderSelectionHighlight(t *testing.T) {
 func TestRenderSelectionGutterAlignment(t *testing.T) {
 	e := entriesWithIDs(1)[0]
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: []mock.LogEntry{e}, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 
 	sel := m.summaryLine(e, true)
@@ -2798,7 +2798,7 @@ func TestRenderSelectionGutterAlignment(t *testing.T) {
 func TestModelFooterExpandHint(t *testing.T) {
 	entries := entriesWithIDs(1)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2813,7 +2813,7 @@ func TestModelFooterExpandHint(t *testing.T) {
 
 func TestModelHelpContainsEnterBinding(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.showHelp = true
 
 	view := m.View()
@@ -2833,7 +2833,7 @@ func TestModelHelpContainsEnterBinding(t *testing.T) {
 func TestModelExpandPinsSummaryToTop(t *testing.T) {
 	entries := entriesWithIDs(30)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 30}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2860,7 +2860,7 @@ func TestModelExpandPinsSummaryToTop(t *testing.T) {
 func TestModelExpandOffsetSurvivesRingEviction(t *testing.T) {
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -2906,7 +2906,7 @@ func TestModelExpandOffsetSurvivesRingEviction(t *testing.T) {
 func TestModelExpandResizeKeepsExpansion(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.expandedID = "req-0"
@@ -2942,7 +2942,7 @@ func TestModelExpandCollapseEndpointsKeepsExpansion(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, eps, Config{}, 80, 24)
+	m := newModel(src, eps, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.expandedID = "req-0"
@@ -2980,7 +2980,7 @@ func TestModelExpandTinyViewport(t *testing.T) {
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
 	// Height=5 gives vpHeight=5-3-1=1 (clamped to 1). Width=50.
-	m := newModel(src, nil, Config{}, 50, 5)
+	m := newModel(src, nil, nil, Config{}, 50, 5)
 	m.last = src.snap
 	m.renderFeed()
 	if m.view.Height != 1 {
@@ -3021,7 +3021,7 @@ func TestLayoutWideThreshold(t *testing.T) {
 	}
 
 	// Width 99 → narrow fallback (below 100 threshold).
-	m := newModel(makeSource(), nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
+	m := newModel(makeSource(), nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
 	m.last = m.source.Snapshot()
 	m.renderFeed()
 	view := m.View()
@@ -3040,7 +3040,7 @@ func TestLayoutWideThreshold(t *testing.T) {
 	}
 
 	// Width 100 → wide layout.
-	m2 := newModel(makeSource(), nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 100, 30)
+	m2 := newModel(makeSource(), nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 100, 30)
 	m2.last = m2.source.Snapshot()
 	m2.renderFeed()
 	m2.syncEndpoints()
@@ -3069,7 +3069,7 @@ func TestLayoutWideHeightThreshold(t *testing.T) {
 	}
 
 	// w=120, h=13 → narrow.
-	m := newModel(makeSource(), nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 13)
+	m := newModel(makeSource(), nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 13)
 	m.last = m.source.Snapshot()
 	m.renderFeed()
 	view := m.View()
@@ -3078,7 +3078,7 @@ func TestLayoutWideHeightThreshold(t *testing.T) {
 	}
 
 	// w=120, h=14 → wide.
-	m2 := newModel(makeSource(), nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 14)
+	m2 := newModel(makeSource(), nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 14)
 	m2.last = m2.source.Snapshot()
 	m2.renderFeed()
 	m2.syncEndpoints()
@@ -3090,7 +3090,7 @@ func TestLayoutWideHeightThreshold(t *testing.T) {
 
 func TestGeometryWidths(t *testing.T) {
 	for _, w := range []int{98, 99, 100, 101, 110, 120, 137, 140, 200} {
-		m := newModel(&fakeSource{}, nil, Config{}, w, 30)
+		m := newModel(&fakeSource{}, nil, nil, Config{}, w, 30)
 		g := m.geometry()
 
 		if g.leftTotal != w*2/5 {
@@ -3116,7 +3116,7 @@ func TestGeometryWidths(t *testing.T) {
 
 func TestGeometryHeights(t *testing.T) {
 	for _, h := range []int{14, 20, 24, 30, 40} {
-		m := newModel(&fakeSource{}, nil, Config{}, 120, h)
+		m := newModel(&fakeSource{}, nil, nil, Config{}, 120, h)
 		g := m.geometry()
 
 		if g.panelTotal != h-5 {
@@ -3133,7 +3133,7 @@ func TestGeometryHeights(t *testing.T) {
 
 func TestLayoutWideNoWrap(t *testing.T) {
 	for _, wxh := range []struct{ w, h int }{{100, 14}, {101, 14}, {120, 24}, {137, 40}} {
-		m := newModel(&fakeSource{snap: mock.StatsSnapshot{TotalRequests: 10, Uptime: time.Minute}}, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, wxh.w, wxh.h)
+		m := newModel(&fakeSource{snap: mock.StatsSnapshot{TotalRequests: 10, Uptime: time.Minute}}, nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, wxh.w, wxh.h)
 		m.last = m.source.Snapshot()
 		m.renderFeed()
 		m.syncEndpoints()
@@ -3154,7 +3154,7 @@ func TestLayoutWidePanelsAlign(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3213,7 +3213,7 @@ func TestLayoutWideEndpointsScrollIndependent(t *testing.T) {
 		src.snap.EndpointLatency[fmt.Sprintf("endpoint-%02d", i)] = mock.LatencyStats{Count: 0}
 	}
 
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3288,7 +3288,7 @@ func TestLayoutWideToggleLeftPanel(t *testing.T) {
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 0}},
 	}}
 
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3351,7 +3351,7 @@ func TestLayoutWideAutoCollapseShortHeight(t *testing.T) {
 	}}
 
 	// w=120, h=19 -> auto-collapse fires (height < 20), but still wide.
-	m := newModel(src, eps, Config{}, 120, 19)
+	m := newModel(src, eps, nil, Config{}, 120, 19)
 	m.last = src.snap
 
 	if !m.wide() {
@@ -3410,7 +3410,7 @@ func TestLayoutWideKeyBindingsStillWork(t *testing.T) {
 	}
 
 	for _, width := range []int{80, 120} {
-		m := newModel(makeSrc(), nil, Config{}, width, 30)
+		m := newModel(makeSrc(), nil, nil, Config{}, width, 30)
 		m.last = m.source.Snapshot()
 		for _, key := range keys {
 			// Must not panic.
@@ -3436,7 +3436,7 @@ func TestLayoutFallbackLegacyStrings(t *testing.T) {
 		HitCounts:       map[string]uint64{"ping": 1},
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 1, P95: 1.5}},
 	}}
-	m := newModel(src, eps, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
+	m := newModel(src, eps, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
 	m.last = src.snap
 	m.renderFeed()
 	view := m.View()
@@ -3458,7 +3458,7 @@ func TestLayoutFallbackLegacyStrings(t *testing.T) {
 func TestLayoutCrossThresholdResize(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 30)
+	m := newModel(src, nil, nil, Config{}, 80, 30)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -3536,7 +3536,7 @@ func TestViewGeometryInvariants(t *testing.T) {
 								t.Errorf("panic at w=%d,h=%d,eps=%d,logs=%d: %v", w, h, nEP, nLogs, r)
 							}
 						}()
-						m := newModel(src, eps, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, w, h)
+						m := newModel(src, eps, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, w, h)
 						m.last = src.snap
 						m.renderFeed()
 						m.syncEndpoints()
@@ -3584,7 +3584,7 @@ func TestLayoutWideZeroEndpoints(t *testing.T) {
 					HitCounts:       make(map[string]uint64),
 					EndpointLatency: make(map[string]mock.LatencyStats),
 				}}
-				m := newModel(src, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, w, h)
+				m := newModel(src, nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, w, h)
 				m.last = src.snap
 				m.renderFeed()
 				m.syncEndpoints()
@@ -3622,7 +3622,7 @@ func TestLayoutWideZeroEndpoints(t *testing.T) {
 
 	// Explicit boundary checks
 	// w=100,h=14 — threshold, zero endpoints.
-	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 100, 14)
+	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 100, 14)
 	m.last = m.source.Snapshot()
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3635,7 +3635,7 @@ func TestLayoutWideZeroEndpoints(t *testing.T) {
 	}
 
 	// w=120,h=30 — typical wide layout, zero endpoints.
-	m2 := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 30)
+	m2 := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 120, 30)
 	m2.last = m2.source.Snapshot()
 	m2.renderFeed()
 	m2.syncEndpoints()
@@ -3657,7 +3657,7 @@ func TestLayoutWideZeroEndpoints(t *testing.T) {
 	}
 
 	// w=99,h=30 — narrow fallback, zero endpoints. Must NOT panic.
-	m3 := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
+	m3 := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{Addr: ":8080", StubsDir: "../stubs", LogDir: "logs"}, 99, 30)
 	m3.last = m3.source.Snapshot()
 	m3.renderFeed()
 	m3.syncEndpoints()
@@ -3669,7 +3669,7 @@ func TestLayoutWideZeroEndpoints(t *testing.T) {
 // ================================================================
 
 func TestRenderPauseButton(t *testing.T) {
-	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{}, 120, 30)
+	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{}, 120, 30)
 
 	if !m.liveFollow {
 		t.Fatal("expected liveFollow=true by default")
@@ -3704,7 +3704,7 @@ func TestRenderPauseButtonRightAligned(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3747,7 +3747,7 @@ func stripANSI(s string) string {
 func TestRenderPauseButtonResumesOnScrollBottom(t *testing.T) {
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -3781,7 +3781,7 @@ func TestRenderPauseButtonResumesOnScrollBottom(t *testing.T) {
 }
 
 func TestRenderPauseButtonFrozenInPrompt(t *testing.T) {
-	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{}, 120, 30)
+	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{}, 120, 30)
 
 	// Enter prompt.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -3809,7 +3809,7 @@ func TestRenderNoStatusIndicator(t *testing.T) {
 	}}
 
 	// At w=80 (narrow).
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	if strings.Contains(m.View(), "Status:") {
@@ -3817,7 +3817,7 @@ func TestRenderNoStatusIndicator(t *testing.T) {
 	}
 
 	// At w=120 (wide).
-	m2 := newModel(src, nil, Config{}, 120, 30)
+	m2 := newModel(src, nil, nil, Config{}, 120, 30)
 	m2.last = m2.source.Snapshot()
 	m2.renderFeed()
 	m2.syncEndpoints()
@@ -3838,7 +3838,7 @@ func TestRenderStreamTableHeader(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3871,7 +3871,7 @@ func TestRenderStreamTableColumns(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3922,7 +3922,7 @@ func TestSummaryLineRendersLocalTime(t *testing.T) {
 		Webhook:        "test",
 		LatencyMs:      1.0,
 	}
-	m := newModel(&fakeSource{}, nil, Config{}, 80, 24)
+	m := newModel(&fakeSource{}, nil, nil, Config{}, 80, 24)
 	row := m.summaryLine(e, false)
 
 	want, _ := time.Parse(time.RFC3339Nano, e.Timestamp)
@@ -3943,7 +3943,7 @@ func TestRenderStreamTableUnmatched(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3962,7 +3962,7 @@ func TestRenderStreamTablePathTruncates(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 100, 14)
+	m := newModel(src, nil, nil, Config{}, 100, 14)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -3987,7 +3987,7 @@ func TestRenderStreamTableTintByteIdentical(t *testing.T) {
 	}
 
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -4033,7 +4033,7 @@ func TestRenderStreamTableNoLatency(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -4061,7 +4061,7 @@ func TestRenderStreamTableSanitizes(t *testing.T) {
 		},
 		TotalLogs: 1,
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -4082,7 +4082,7 @@ func TestRenderStreamTableSanitizes(t *testing.T) {
 func TestFeedLineMappingWide(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -4114,7 +4114,7 @@ func TestFeedLineMappingWideExpanded(t *testing.T) {
 		Method: "POST", Path: "/test2", ResponseStatus: 201, Webhook: "test2", LatencyMs: 2.0,
 	}}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -4138,7 +4138,7 @@ func TestFeedLineMappingWideExpanded(t *testing.T) {
 func TestModelExpandToggleEnterWide(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -4186,7 +4186,7 @@ func TestModelExpandSurvivesPanelToggleWide(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.expandedID = "req-0"
@@ -4216,7 +4216,7 @@ func TestRenderEndpointsTableColumns(t *testing.T) {
 			"ping": {Count: 42, P95: 18.5},
 		},
 	}}
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()
@@ -4250,7 +4250,7 @@ func TestRenderEndpointsTableSortedByID(t *testing.T) {
 		HitCounts:       map[string]uint64{"zebra": 0, "alpha": 0, "gamma": 0},
 		EndpointLatency: map[string]mock.LatencyStats{},
 	}}
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()
@@ -4277,7 +4277,7 @@ func TestRenderEndpointsTableAnyMethod(t *testing.T) {
 		HitCounts:       map[string]uint64{"all": 0},
 		EndpointLatency: map[string]mock.LatencyStats{},
 	}}
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()
@@ -4297,7 +4297,7 @@ func TestRenderEndpointsTableTruncates(t *testing.T) {
 		HitCounts:       map[string]uint64{"very-long-stub-id-that-exceeds-eight": 0},
 		EndpointLatency: map[string]mock.LatencyStats{},
 	}}
-	m := newModel(src, eps, Config{}, 100, 30)
+	m := newModel(src, eps, nil, Config{}, 100, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()
@@ -4320,7 +4320,7 @@ func TestRenderEndpointsTableSanitizes(t *testing.T) {
 	// Set hit count for the sanitized key — the map key is the literal, but
 	// the rendered text should be sanitized.
 	src.snap.HitCounts = map[string]uint64{"clean\x1b[31mid": 0}
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()
@@ -4352,7 +4352,7 @@ func TestRenderFilterChipWide(t *testing.T) {
 		EndpointLatency: map[string]mock.LatencyStats{"ping": {Count: 0}},
 	}}
 
-	m := newModel(src, eps, Config{}, 120, 30)
+	m := newModel(src, eps, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.filter = Filter{Endpoint: "ping"}
 	m.renderFeed()
@@ -4387,7 +4387,7 @@ func TestRenderFilterChipWide(t *testing.T) {
 }
 
 func TestRenderServerInfoChips(t *testing.T) {
-	m := newModel(&fakeSource{}, nil, Config{Addr: ":9090", StubsDir: "../stubs", LogDir: "logs"}, 120, 30)
+	m := newModel(&fakeSource{}, nil, nil, Config{Addr: ":9090", StubsDir: "../stubs", LogDir: "logs"}, 120, 30)
 	m.last = m.source.Snapshot()
 	m.last.Uptime = time.Minute
 	m.last.TotalRequests = 128
@@ -4420,7 +4420,7 @@ func TestRenderMetricsChips(t *testing.T) {
 			P95:   12.3,
 		},
 	}}
-	m := newModel(src, nil, Config{}, 120, 30)
+	m := newModel(src, nil, nil, Config{}, 120, 30)
 	m.last = src.snap
 	m.renderFeed()
 	m.syncEndpoints()
@@ -4442,7 +4442,7 @@ func TestRenderMetricsChips(t *testing.T) {
 }
 
 func TestRenderMetricsEmptyState(t *testing.T) {
-	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, Config{}, 120, 30)
+	m := newModel(&fakeSource{snap: mock.StatsSnapshot{}}, nil, nil, Config{}, 120, 30)
 	m.last = m.source.Snapshot()
 	m.renderFeed()
 	m.syncEndpoints()
@@ -4664,7 +4664,7 @@ func makeEntryForInspect() mock.LogEntry {
 func makeModelForInspect(w int) Model {
 	entries := []mock.LogEntry{makeEntryForInspect()}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, w, 24)
+	m := newModel(src, nil, nil, Config{}, w, 24)
 	m.last = src.snap
 	m.expandedID = "req-abc-123"
 	m.inspect = true
@@ -4781,7 +4781,7 @@ func TestInspectLines_EmptyMaps(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-empty"
 	m.inspect = true
@@ -4864,7 +4864,7 @@ func TestDetailLines_HeaderCap(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.expandedID = "req-cap"
 	m.renderFeed()
@@ -4896,7 +4896,7 @@ func TestDetailLines_HeaderCap_ByteIdenticalBelowCap(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.expandedID = "req-atcap"
 	m.renderFeed()
@@ -4922,7 +4922,7 @@ func TestDetailLines_QueryCap(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.expandedID = "req-qcap"
 	m.renderFeed()
@@ -4952,7 +4952,7 @@ func TestDetailLines_QueryCap_ByteIdenticalBelowCap(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.expandedID = "req-qatcap"
 	m.renderFeed()
@@ -4971,7 +4971,7 @@ func TestInspectLines_TinyViewport(t *testing.T) {
 	e := makeEntryForInspect()
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 10, 24) // Very narrow.
+	m := newModel(src, nil, nil, Config{}, 10, 24) // Very narrow.
 	m.last = src.snap
 	m.expandedID = e.RequestID
 	m.inspect = true
@@ -5000,7 +5000,7 @@ func TestInspectLines_UnmatchedEntry(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-404"
 	m.inspect = true
@@ -5024,7 +5024,7 @@ func TestInspectLines_UnmatchedEntry(t *testing.T) {
 func TestModelInspectOpenDismiss(t *testing.T) {
 	entries := entriesWithIDs(2)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5059,7 +5059,7 @@ func TestModelInspectDismissWithLivePaused(t *testing.T) {
 	// is not always true.
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5125,7 +5125,7 @@ func TestModelInspectSwitchRowEnter(t *testing.T) {
 		})
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5159,7 +5159,7 @@ func TestModelInspectSwitchRowEnter(t *testing.T) {
 func TestModelInspectEnterDismiss(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5186,7 +5186,7 @@ func TestModelInspectEnterDismiss(t *testing.T) {
 func TestModelInspectEscClears(t *testing.T) {
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5211,7 +5211,7 @@ func TestModelInspectEscClears(t *testing.T) {
 func TestModelInspectCClears(t *testing.T) {
 	entries := entriesWithIDs(2)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5236,7 +5236,7 @@ func TestModelInspectCClears(t *testing.T) {
 func TestModelInspectAutoClearEviction(t *testing.T) {
 	entries := entriesWithIDs(3)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 3}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5266,7 +5266,7 @@ func TestModelInspectAutoClearFilter(t *testing.T) {
 		{RequestID: "req-1", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Method: "GET", Path: "/health", ResponseStatus: 200, Webhook: "health", LatencyMs: 1.0},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 2}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5288,7 +5288,7 @@ func TestModelInspectAutoClearFilter(t *testing.T) {
 func TestModelInspectOffsetAcrossTicks(t *testing.T) {
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5322,7 +5322,7 @@ func TestModelInspectOffsetAcrossTicks(t *testing.T) {
 func TestModelInspectWindowSizeReduce(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5352,7 +5352,7 @@ func TestModelInspectWideLayout(t *testing.T) {
 		},
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, eps, Config{}, 110, 30)
+	m := newModel(src, eps, nil, Config{}, 110, 30)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5382,7 +5382,7 @@ func TestModelInspectTinyViewport(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 40, 5)
+	m := newModel(src, nil, nil, Config{}, 40, 5)
 	m.last = src.snap
 
 	m.expandedID = "req-0"
@@ -5401,7 +5401,7 @@ func TestModelInspectTinyViewport(t *testing.T) {
 
 func TestModelInspectPromptSwallowsI(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	// Enter prompt mode.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -5424,7 +5424,7 @@ func TestModelInspectPromptSwallowsI(t *testing.T) {
 func TestModelInspectNoFocusTrap(t *testing.T) {
 	entries := entriesWithIDs(20)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 20}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5463,14 +5463,14 @@ func TestInspectExpansionByteIdentical(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
 
 	// Build with inspect=false.
-	mNoInspect := newModel(src, nil, Config{}, 80, 24)
+	mNoInspect := newModel(src, nil, nil, Config{}, 80, 24)
 	mNoInspect.last = src.snap
 	mNoInspect.expandedID = "req-0"
 	mNoInspect.renderFeed()
 	viewNoInspect := mNoInspect.View()
 
 	// Build with inspect=true, then dismiss.
-	mInspect := newModel(src, nil, Config{}, 80, 24)
+	mInspect := newModel(src, nil, nil, Config{}, 80, 24)
 	mInspect.last = src.snap
 	mInspect.expandedID = "req-0"
 	mInspect.renderFeed()
@@ -5509,7 +5509,7 @@ func TestInspectExpansionByteIdentical(t *testing.T) {
 func TestModelFooterInspectHint(t *testing.T) {
 	entries := entriesWithIDs(1)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5522,7 +5522,7 @@ func TestModelFooterInspectHint(t *testing.T) {
 func TestModelFooterExpandHintPreserved(t *testing.T) {
 	entries := entriesWithIDs(1)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 120, 24)
+	m := newModel(src, nil, nil, Config{}, 120, 24)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5534,7 +5534,7 @@ func TestModelFooterExpandHintPreserved(t *testing.T) {
 
 func TestModelHelpContainsInspectBinding(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.showHelp = true
 
 	view := m.View()
@@ -5557,7 +5557,7 @@ func TestModelHelpContainsInspectBinding(t *testing.T) {
 
 func TestModelHelpContainsGotoBindings(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.showHelp = true
 
 	view := m.View()
@@ -5576,7 +5576,7 @@ func TestModelHelpContainsGotoBindings(t *testing.T) {
 func TestModelGotoTop_G_lowercase(t *testing.T) {
 	entries := entriesWithIDs(60) // enough to make the feed scrollable
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.view.GotoBottom()
@@ -5598,7 +5598,7 @@ func TestModelGotoTop_G_lowercase(t *testing.T) {
 func TestModelGotoBottom_G_uppercase(t *testing.T) {
 	entries := entriesWithIDs(60)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.view.SetYOffset(0) // start away from the bottom
@@ -5618,7 +5618,7 @@ func TestModelGotoBottom_G_uppercase(t *testing.T) {
 func TestModelGotoTopBottom_PreservesExpansion(t *testing.T) {
 	entries := entriesWithIDs(60)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.view.GotoBottom()
@@ -5648,7 +5648,7 @@ func TestModelGotoTopBottom_NoCollisionWithPrompt(t *testing.T) {
 	// 'g'/'G' must be swallowed by the filter prompt (typed as filter text),
 	// not interpreted as navigation, while prompting.
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m2 := updated.(Model)
@@ -5671,7 +5671,7 @@ func TestModelFitsSelection_NavKeysMoveSelection(t *testing.T) {
 	// explicit sel index moved with j/k.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5729,7 +5729,7 @@ func TestModelFitsSelection_ArrowKeysMoveSelection(t *testing.T) {
 	// Up/Down arrow keys behave like k/j in fits mode.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -5750,7 +5750,7 @@ func TestModelFitsSelection_GotoTopBottom(t *testing.T) {
 	// G selects the last entry and resumes it.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5782,7 +5782,7 @@ func TestModelFitsSelection_EnterExpandsSelected(t *testing.T) {
 	// UXR-014 AC5: enter expands the selected entry (not just the top line).
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5815,7 +5815,7 @@ func TestModelFitsSelection_SurvivesTickAndFilter(t *testing.T) {
 		}
 	}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5854,7 +5854,7 @@ func TestModelFitsSelection_NoSilentLiveFollowResume(t *testing.T) {
 	// key that cannot move the viewport must not silently resume live-follow.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5883,7 +5883,7 @@ func TestModelOverflow_NoSilentLiveFollowResume(t *testing.T) {
 	// via L, G, and the collapse paths.
 	entries := entriesWithIDs(60)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 60}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	if m.feedFits() {
@@ -5928,7 +5928,7 @@ func TestModelInspectStandaloneSelectedRow(t *testing.T) {
 	// enter press. Fits mode: select a middle row, open, verify, dismiss.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -5969,7 +5969,7 @@ func TestModelInspectStandaloneOverflowRow(t *testing.T) {
 	// DASH-004 in overflow mode: 'i' inspects the row at the top visible line.
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	if m.feedFits() {
@@ -6016,7 +6016,7 @@ func TestModelInspectStandaloneOverflowRow(t *testing.T) {
 func TestModelInspectStandaloneEmptyFeed(t *testing.T) {
 	// DASH-004 AC2: 'i' on an empty feed is a safe no-op.
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 
@@ -6727,7 +6727,7 @@ func TestDetailLines_UnmatchedResponse(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = "req-404"
 	m.renderFeed()
@@ -6798,7 +6798,7 @@ func TestDetailLines_ResponseNoNewline(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 100, 24)
+	m := newModel(src, nil, nil, Config{}, 100, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -6857,7 +6857,7 @@ func TestDetailLines_ResponseWidthDegradation(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 20, 24)
+	m := newModel(src, nil, nil, Config{}, 20, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -6927,7 +6927,7 @@ func TestDetailLines_TinyViewport(t *testing.T) {
 	e := makeEntryForInspect()
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 10, 24) // Very narrow.
+	m := newModel(src, nil, nil, Config{}, 10, 24) // Very narrow.
 	m.last = src.snap
 	m.expandedID = e.RequestID
 	m.renderFeed()
@@ -7202,7 +7202,7 @@ func TestNarrowDegradationBand(t *testing.T) {
 	}
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 20, 24)
+	m := newModel(src, nil, nil, Config{}, 20, 24)
 	m.last = src.snap
 	m.expandedID = "req-0"
 	m.renderFeed()
@@ -7238,7 +7238,7 @@ func TestBandNoNewlineMapping(t *testing.T) {
 	e := makeEntryForInspect()
 	entries := []mock.LogEntry{e}
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 1}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.expandedID = e.RequestID
 	m.renderFeed()
@@ -7321,7 +7321,7 @@ func overflowModel(t *testing.T, n int) (Model, *fakeSource) {
 	t.Helper()
 	entries := entriesWithIDs(n)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: uint64(n)}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	if m.feedFits() {
@@ -7496,7 +7496,7 @@ func TestUnifiedCursor_EnterInspectBothModes(t *testing.T) {
 	// Fits mode.
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	m.sel = 3
@@ -7896,7 +7896,7 @@ func TestUnifiedCursor_EmptyAndNoMatch(t *testing.T) {
 	// UXR-018 §4.5 — empty feed / no-match filter: sel=-1, all navigation
 	// keys no-op, View() and ensureSelectedVisible are safe.
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	if m.selectedIdx() != -1 {
@@ -7996,7 +7996,7 @@ func TestEnsureSelectedVisible_LastEntryBottomClamp(t *testing.T) {
 func TestEnsureSelectedVisible_FitsModeNoOp(t *testing.T) {
 	entries := entriesWithIDs(5)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 5}}
-	m := newModel(src, nil, Config{}, 80, 40)
+	m := newModel(src, nil, nil, Config{}, 80, 40)
 	m.last = src.snap
 	m.renderFeed()
 	if !m.feedFits() {
@@ -8014,7 +8014,7 @@ func TestEnsureSelectedVisible_TinyViewportMargin0(t *testing.T) {
 	// view.Height=2 → margin 0: the cursor may sit on the very top row.
 	entries := entriesWithIDs(50)
 	src := &fakeSource{snap: mock.StatsSnapshot{RecentLogs: entries, TotalLogs: 50}}
-	m := newModel(src, nil, Config{}, 80, 6) // feedHeight = 6-3-1 = 2
+	m := newModel(src, nil, nil, Config{}, 80, 6) // feedHeight = 6-3-1 = 2
 	m.last = src.snap
 	m.renderFeed()
 	if m.view.Height != 2 {
@@ -8038,7 +8038,7 @@ func TestEnsureSelectedVisible_TinyViewportMargin0(t *testing.T) {
 
 func TestEnsureSelectedVisible_EmptyFeedNoOp(t *testing.T) {
 	src := &fakeSource{snap: mock.StatsSnapshot{}}
-	m := newModel(src, nil, Config{}, 80, 24)
+	m := newModel(src, nil, nil, Config{}, 80, 24)
 	m.last = src.snap
 	m.renderFeed()
 	m.sel = 3 // stale cursor; empty feed → safe no-op
@@ -8062,7 +8062,7 @@ func TestEndpointsPanel_ShowsGlobRegex(t *testing.T) {
 		HitCounts:       map[string]uint64{"users": 0, "orders": 0},
 		EndpointLatency: map[string]mock.LatencyStats{},
 	}}
-	m := newModel(src, eps, Config{}, 200, 30)
+	m := newModel(src, eps, nil, Config{}, 200, 30)
 	m.last = src.snap
 	m.syncEndpoints()
 	view := m.View()

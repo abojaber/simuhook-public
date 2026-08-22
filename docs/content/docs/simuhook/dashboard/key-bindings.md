@@ -47,6 +47,8 @@ The feed has a highlight **cursor**. Cursor keys move it entry-by-entry; the vie
 
 | Key | Action |
 |-----|--------|
+| `1` | Switch to main dashboard |
+| `2` | Switch to proxy view |
 | `L` | Pause / resume live-follow (freezes / resumes the feed) |
 | `e` | Toggle the endpoints panel (wide layout) |
 | `r` | Manual refresh |

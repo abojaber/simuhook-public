@@ -16,6 +16,7 @@ simuhook [flags]
   --addr :8080          listen address (env PORT)
   --stubs ../stubs      stubs directory (env STUBS_DIR)
   --log-dir logs        log directory (env LOG_DIR)
+  --proxy /path=https://dest  transparent proxy rule (repeatable)
   --tui auto|on|off     dashboard mode: auto = TUI on a TTY, line output otherwise
   --recent N            recent-log ring buffer size (default 50; also the TUI feed depth)
   --max-log-body N      cap stored request/response body size in bytes for logs and
@@ -65,6 +66,14 @@ simuhook --max-log-body 1024
 ```
 
 Bodies larger than the cap are truncated in the logs and dashboard — the actual HTTP response served to clients is never affected.
+
+**Forward unmatched requests to a real service:**
+
+```bash
+simuhook --proxy /api=https://api.example.com
+```
+
+When no stub matches a request whose path starts with `/api`, it is forwarded to `https://api.example.com` and the upstream response is returned unchanged. See [Proxy]({{< relref "/docs/simuhook/features/proxy" >}}) for full details.
 
 ## The TUI Dashboard
 

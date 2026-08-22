@@ -175,6 +175,48 @@ Then  _raw.log stores the first 64 KB (request + response combined), then stops 
 
 ---
 
+## PROXY-004 — Proxy TUI view with structured log entries `[Should]`
+
+**Status:** `ready`
+
+**Story:**
+> As a developer debugging a proxied integration, I want a dedicated proxy view in the TUI dashboard that shows all proxy requests as structured log entries (like the main feed but filtered to proxy traffic only), so that I can monitor proxy activity separately from stub traffic and see both structured entries and raw bytes in one place.
+
+**Decision:** the proxy view (viewMode == 1, accessible via `2` key) shows structured proxy log entries filtered from `StatsTracker.RecentLogs` where `Webhook == "_proxy"`, rendered using the same `summaryLine()` pipeline as the main feed. Below the structured entries, a "Raw Bytes" section shows the raw tee ring buffer lines (from `RawTeeSource.RawLogLines()`). The view auto-scrolls when live-follow is active.
+
+**Implementation:**
+- `proxyEntries()` helper filters `m.last.RecentLogs` to entries where `Webhook == "_proxy"`
+- `buildProxyContent()` builds the full proxy view content: structured entries + raw bytes section
+- `renderRawLogView()` renders header ("PROXY REQUESTS"), viewport, and footer with request + raw line counts
+- Tick handler calls `buildProxyContent()` to update viewport content on each tick
+- Key `1` switches to main dashboard, `2` switches to proxy view
+
+**ACs:**
+```
+Given a server started with --proxy /api=https://api.example.com
+When  a client sends a request for /api/orders (no stub matches, proxied)
+Then  1. the proxy view shows the request as a structured log entry (same format as main feed)
+      2. the structured entry shows time, method, path, status, webhook "_proxy", and latency
+      3. the raw bytes section shows the >>>/<<< markers from the raw tee ring buffer
+
+Given a server started with --proxy
+When  a client sends a request that matches a stub (not proxied)
+Then  1. the proxy view does NOT show the request (filtered to _proxy only)
+      2. the main dashboard shows the request normally
+
+Given the proxy view is active and live-follow is on
+When  new proxy requests arrive
+Then  the view auto-scrolls to show the newest entries
+
+Given the proxy view is active and no proxy requests have been made
+When  the view renders
+Then  it shows "(no proxy requests yet)" placeholder text
+```
+
+**Tests:** `TestProxyView_StructuredEntries`, `TestProxyView_NoProxyEntries`, `TestProxyView_FiltersOnlyProxyWebhook`, `TestProxyView_NilSourceWithProxyLogs`, `TestProxyView_RawBytesSection`, `TestProxyEntries_Empty`, `TestProxyEntries_Mixed`.
+
+---
+
 ## Out of scope
 
 - WebSocket / SSE proxying (WS-012, backlog).

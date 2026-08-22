@@ -157,6 +157,9 @@ func (m Model) endpointHeading(base string) string {
 
 // View renders the full dashboard. Dispatches to wide or narrow layout.
 func (m Model) View() string {
+	if m.viewMode == 1 {
+		return m.renderRawLogView()
+	}
 	if m.wide() {
 		return m.viewWide()
 	}
@@ -590,6 +593,7 @@ func (m Model) renderHelp() string {
 		styleMuted.Render("│  enter   expand/collapse row  i       inspect req/resp      │"),
 		styleMuted.Render("│  ↑/↓     scroll feed          pgup/dn page                  │"),
 		styleMuted.Render("│  g/G     jump to top / bottom of feed                       │"),
+		styleMuted.Render("│  1/2     switch view (main/proxy)                           │"),
 		styleMuted.Render("│  shift+↑/↓ K/J scroll endpoints esc   cancel / clear filter │"),
 		styleMuted.Render("╰─────────────────────────────────────────────────────────────╯"),
 	}

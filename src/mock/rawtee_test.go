@@ -658,3 +658,162 @@ func TestRawTeeSink_CloseIdempotent(t *testing.T) {
 		t.Fatalf("second close: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Ring buffer tests
+// ---------------------------------------------------------------------------
+
+func TestRawLogRing_AppendAndSnapshot(t *testing.T) {
+	ring := newRawLogRing(10)
+
+	ring.append("line 1")
+	ring.append("line 2")
+	ring.append("line 3")
+
+	snap := ring.snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(snap))
+	}
+	if snap[0] != "line 1" || snap[1] != "line 2" || snap[2] != "line 3" {
+		t.Errorf("unexpected snapshot: %v", snap)
+	}
+}
+
+func TestRawLogRing_MaxSize(t *testing.T) {
+	ring := newRawLogRing(3)
+
+	ring.append("a")
+	ring.append("b")
+	ring.append("c")
+	ring.append("d") // should evict "a"
+
+	snap := ring.snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(snap))
+	}
+	if snap[0] != "b" || snap[1] != "c" || snap[2] != "d" {
+		t.Errorf("unexpected snapshot after eviction: %v", snap)
+	}
+}
+
+func TestRawLogRing_SnapshotIsCopy(t *testing.T) {
+	ring := newRawLogRing(10)
+	ring.append("original")
+
+	snap := ring.snapshot()
+	snap[0] = "modified"
+
+	snap2 := ring.snapshot()
+	if snap2[0] != "original" {
+		t.Error("snapshot should be a copy, not a reference")
+	}
+}
+
+func TestRawLogRing_EmptySnapshot(t *testing.T) {
+	ring := newRawLogRing(10)
+	snap := ring.snapshot()
+	if len(snap) != 0 {
+		t.Errorf("expected empty snapshot, got %d lines", len(snap))
+	}
+}
+
+func TestRawLogRing_ExactMaxSize(t *testing.T) {
+	ring := newRawLogRing(3)
+
+	ring.append("a")
+	ring.append("b")
+	ring.append("c")
+
+	snap := ring.snapshot()
+	if len(snap) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(snap))
+	}
+	if snap[0] != "a" || snap[1] != "b" || snap[2] != "c" {
+		t.Errorf("unexpected snapshot: %v", snap)
+	}
+}
+
+func TestRawTeeSink_RawLogLines(t *testing.T) {
+	dir := t.TempDir()
+	sink := newRawTeeSink(dir)
+	defer sink.Close()
+
+	// Write some data with newlines.
+	sink.Write([]byte("line one\nline two\n"))
+
+	lines := sink.RawLogLines()
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines in ring, got %d", len(lines))
+	}
+	if lines[0] != "line one" {
+		t.Errorf("expected 'line one', got %q", lines[0])
+	}
+	if lines[1] != "line two" {
+		t.Errorf("expected 'line two', got %q", lines[1])
+	}
+}
+
+func TestRawTeeSink_RawLogLines_EmptyLinesFiltered(t *testing.T) {
+	dir := t.TempDir()
+	sink := newRawTeeSink(dir)
+	defer sink.Close()
+
+	// Write data with empty lines — should be filtered out.
+	sink.Write([]byte("a\n\nb\n\nc\n"))
+
+	lines := sink.RawLogLines()
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 non-empty lines, got %d: %v", len(lines), lines)
+	}
+}
+
+func TestRawTeeListener_RawLogLines(t *testing.T) {
+	logDir := t.TempDir()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	rules := []ProxyRule{{Path: "/api", Destination: "https://example.com"}}
+	rtl := NewRawTeeListener(ln, rules, logDir)
+	defer rtl.Close()
+
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})}
+	go srv.Serve(rtl)
+	defer srv.Close()
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/api/test")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	lines := rtl.RawLogLines()
+	if len(lines) == 0 {
+		t.Error("expected non-empty raw log lines after proxy request")
+	}
+
+	// Verify the lines contain request/response markers.
+	hasReq := false
+	hasResp := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, ">>>") {
+			hasReq = true
+		}
+		if strings.HasPrefix(line, "<<<") {
+			hasResp = true
+		}
+	}
+	if !hasReq {
+		t.Error("expected request line with >>> marker")
+	}
+	if !hasResp {
+		t.Error("expected response line with <<< marker")
+	}
+}

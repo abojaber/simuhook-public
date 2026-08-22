@@ -154,15 +154,21 @@ func (m *Model) syncEndpoints() {
 type Model struct {
 	source        StatsSource
 	eps           EndpointSource
+	rawSrc        RawLogSource // nil when no proxy rules configured
 	cfg           Config
 	last          mock.StatsSnapshot
 	endpoints     []*mock.Endpoint
 	view          viewport.Model
 	endpointsView viewport.Model
+	rawLogView    viewport.Model // raw log viewport (viewMode == 1)
 	height        int
 	width         int
 	lastErr       error
 	interval      time.Duration
+
+	// View mode: 0 = main dashboard, 1 = raw log view.
+	viewMode      int
+	liveFollowRaw bool // auto-scroll for raw log (default true)
 
 	// Filtering and prompt state.
 	filter    Filter
@@ -192,15 +198,17 @@ type Model struct {
 	inspectFollow bool // preserved live-follow state for dismiss
 }
 
-func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
+func newModel(s StatsSource, eps EndpointSource, rawSrc RawLogSource, cfg Config, w, h int) Model {
 	m := Model{
 		source:        s,
 		eps:           eps,
+		rawSrc:        rawSrc,
 		cfg:           cfg,
 		width:         w,
 		height:        h,
 		interval:      time.Second,
 		liveFollow:    true,
+		liveFollowRaw: true,
 		showEndpoints: true,
 	}
 	m.refreshEndpoints()
@@ -213,6 +221,7 @@ func newModel(s StatsSource, eps EndpointSource, cfg Config, w, h int) Model {
 
 	m.view = viewport.New(1, 1)
 	m.endpointsView = viewport.New(1, 1)
+	m.rawLogView = viewport.New(w, h-3)
 	m.applyGeometry()
 	m.syncFeed()
 	m.syncEndpoints()
@@ -255,8 +264,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.last = m.source.Snapshot()
 		m.refreshEndpoints()
-		m.syncFeed()
-		m.syncEndpoints()
+		if m.viewMode == 1 {
+			// Proxy view: rebuild structured entries + raw bytes.
+			m.buildProxyContent()
+		} else {
+			m.syncFeed()
+			m.syncEndpoints()
+		}
 		return m, refreshCmd(m.interval)
 
 	case tea.KeyMsg:
@@ -279,6 +293,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyGeometry()
 		m.syncFeed()
 		m.syncEndpoints()
+		// Resize raw log viewport.
+		m.rawLogView.Width = m.width
+		m.rawLogView.Height = m.height - 3 // header + footer
 		// UXR-008 — re-pin expanded summary after resize.
 		if line := m.expandedSummaryLine(); line >= 0 {
 			m.view.SetYOffset(line)
@@ -291,8 +308,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Forward non-key messages to the viewport only when not prompting.
+	// Forward non-key messages to the appropriate viewport when not prompting.
 	if !m.prompting {
+		if m.viewMode == 1 {
+			var cmd tea.Cmd
+			m.rawLogView, cmd = m.rawLogView.Update(msg)
+			return m, cmd
+		}
 		var cmd tea.Cmd
 		m.view, cmd = m.view.Update(msg)
 		return m, cmd
@@ -303,6 +325,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKeyMsg processes keyboard input, accounting for prompt mode.
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
+
+	// Raw log view: handle only view-switching, quit, help, and L keys;
+	// forward everything else to the raw log viewport.
+	if m.viewMode == 1 && !m.prompting {
+		switch {
+		case s == "q" || s == "ctrl+c":
+			return m, tea.Quit
+		case s == "1":
+			m.viewMode = 0
+			return m, nil
+		case s == "esc":
+			m.viewMode = 0
+			return m, nil
+		case s == "L":
+			m.liveFollowRaw = !m.liveFollowRaw
+			if m.liveFollowRaw {
+				m.rawLogView.GotoBottom()
+			}
+			return m, nil
+		case s == "?":
+			m.showHelp = !m.showHelp
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.rawLogView, cmd = m.rawLogView.Update(msg)
+			return m, cmd
+		}
+	}
 
 	switch {
 	// Quit: cancels prompt when active, otherwise exits the program.
@@ -315,7 +365,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	// Enter prompt mode.
+	// View switching: 2 = raw log view (from main view).
+	case s == "2" && !m.prompting:
+		m.viewMode = 1
+		return m, nil
+
+	// Enter prompt mode (main view only).
 	case (s == "/" || s == "f") && !m.prompting:
 		m.prompting = true
 		m.prompt = ""

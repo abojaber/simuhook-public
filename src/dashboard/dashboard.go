@@ -21,8 +21,8 @@ type EndpointSource interface {
 
 // Run starts the dashboard program on the alternate screen and returns a
 // non-nil error if the program fails to start or exits abnormally.
-func Run(s StatsSource, eps EndpointSource, cfg Config, w, h int) error {
-	m := newModel(s, eps, cfg, w, h)
+func Run(s StatsSource, eps EndpointSource, rawSrc RawLogSource, cfg Config, w, h int) error {
+	m := newModel(s, eps, rawSrc, cfg, w, h)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err

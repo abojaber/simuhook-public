@@ -22,17 +22,57 @@ const reqLineBudget = 8 * 1024 // 8 KB
 const captureCap = 64 * 1024 // 64 KB
 
 // ---------------------------------------------------------------------------
+// rawLogRing — in-memory ring buffer for recent raw log lines
+// ---------------------------------------------------------------------------
+
+type rawLogRing struct {
+	mu    sync.Mutex
+	lines []string
+	max   int
+}
+
+func newRawLogRing(max int) *rawLogRing {
+	return &rawLogRing{
+		lines: make([]string, 0, max),
+		max:   max,
+	}
+}
+
+func (r *rawLogRing) append(line string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.lines) >= r.max {
+		// Remove oldest entry.
+		copy(r.lines, r.lines[1:])
+		r.lines = r.lines[:len(r.lines)-1]
+	}
+	r.lines = append(r.lines, line)
+}
+
+func (r *rawLogRing) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.lines))
+	copy(out, r.lines)
+	return out
+}
+
+// ---------------------------------------------------------------------------
 // rawTeeSink
 // ---------------------------------------------------------------------------
 
 type rawTeeSink struct {
-	mu  sync.Mutex
-	f   *os.File
-	dir string
+	mu   sync.Mutex
+	f    *os.File
+	dir  string
+	ring *rawLogRing
 }
 
 func newRawTeeSink(dir string) *rawTeeSink {
-	return &rawTeeSink{dir: dir}
+	return &rawTeeSink{
+		dir:  dir,
+		ring: newRawLogRing(200),
+	}
 }
 
 func (s *rawTeeSink) Write(p []byte) (int, error) {
@@ -57,6 +97,14 @@ func (s *rawTeeSink) Write(p []byte) (int, error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "rawtee: write: %v\n", err)
 	}
+
+	// Append each non-empty line to the in-memory ring buffer.
+	for _, line := range strings.Split(string(p), "\n") {
+		if line != "" {
+			s.ring.append(line)
+		}
+	}
+
 	return n, err
 }
 
@@ -69,6 +117,12 @@ func (s *rawTeeSink) Close() error {
 		return err
 	}
 	return nil
+}
+
+// RawLogLines returns a snapshot of recent raw log lines from the in-memory
+// ring buffer. Used by the TUI dashboard to display proxy traffic.
+func (s *rawTeeSink) RawLogLines() []string {
+	return s.ring.snapshot()
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +381,13 @@ func (l *RawTeeListener) Close() error {
 		firstErr = err
 	}
 	return firstErr
+}
+
+// RawLogLines returns a snapshot of recent raw log lines from the in-memory
+// ring buffer. Implements dashboard.RawLogSource so the TUI can display
+// proxy traffic without reading from the file.
+func (l *RawTeeListener) RawLogLines() []string {
+	return l.sink.RawLogLines()
 }
 
 // ---------------------------------------------------------------------------

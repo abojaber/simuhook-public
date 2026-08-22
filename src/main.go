@@ -201,8 +201,9 @@ func main() {
 	// requests that Go's net/http parser rejects before the handler runs
 	// (e.g. a header line with no colon) are captured to _raw.log (PROXY-003).
 	// Mock-only runs never wrap — identity pass-through, no file, zero overhead.
+	var rtl *mock.RawTeeListener
 	if len(proxyRules) > 0 {
-		rtl := mock.NewRawTeeListener(ln, proxyRules, *logDir)
+		rtl = mock.NewRawTeeListener(ln, proxyRules, *logDir)
 		defer rtl.Close()
 		ln = rtl
 	}
@@ -239,7 +240,11 @@ func main() {
 	// non-TUI mode waits for OS signals directly.
 	var exitErr error
 	if tuiEnabled {
-		exitErr = dashboard.Run(stats, registry, dashboard.Config{
+		var rawSrc dashboard.RawLogSource
+		if rtl != nil {
+			rawSrc = rtl
+		}
+		exitErr = dashboard.Run(stats, registry, rawSrc, dashboard.Config{
 			Addr:     *addr,
 			StubsDir: *stubsDir,
 			LogDir:   *logDir,

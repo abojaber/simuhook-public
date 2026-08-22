@@ -17,22 +17,24 @@
       built; GitHub release creation pending auth (blocked step, see below).
 - [x] **Richer templates (TPL-001/002)** — 27 gofakeit data generators + hand-rolled
       JSONPath extraction; D9–D16 approved, implemented + QA-verified 2026-08-16.
-- [ ] **Transparent proxy (PROXY-001/002)** — `--proxy /path=https://dest` forwarding
+- [x] **Transparent proxy (PROXY-001/002)** — `--proxy /path=https://dest` forwarding
       fallback with full-fidelity logging (`raw_headers`, `upstream_request`,
-      `upstream_response`); D1–D4 signed off 2026-08-19, implementation in progress.
-- [ ] **Raw listener-level tee (PROXY-003)** — captures raw request+response bytes at
+      `upstream_response`); D1–D4 signed off 2026-08-19, implemented + committed 2026-08-21.
+- [x] **Raw listener-level tee (PROXY-003)** — captures raw request+response bytes at
       `net.Conn` level before Go's parser rejects malformed requests; `>>>`/`<<<` markers
       in `<log-dir>/_raw.log`; D1–D6 locked 2026-08-19, revised 2026-08-21 (D5=request+response),
-      design approved 2026-08-21, ready for implementation.
+      design approved 2026-08-21, implemented + committed 2026-08-21.
+- [x] **Proxy TUI view (PROXY-004)** — dedicated proxy view in the TUI dashboard showing
+      structured proxy log entries (filtered from StatsTracker where webhook == "_proxy")
+      plus raw bytes from the tee ring buffer; key `2` switches to proxy view, `1` returns
+      to main dashboard; implemented 2026-08-21.
 
 ## Active Priority
 
-1. **Finish the proxy feature (PROXY-001/002)** — implementation + tests done
-   (2026-08-19); remaining: run full QA verification, commit.
-2. **Publish the GitHub release** — `gh auth login` then
+1. **Publish the GitHub release** — `gh auth login` then
    `gh release create v0.1.0 --title "Simuhook v0.1.0" --notes-file dist/RELEASE_NOTES.md
    dist/simuhook-* dist/CHECKSUMS.txt` (binaries + notes + checksums ready in `dist/`).
-3. **Non-blocking QA test gaps (small, low-effort):**
+2. **Non-blocking QA test gaps (small, low-effort):**
    - D2 AC3/AC4: pin TZ=UTC byte-identical + `??:??:??` parse-failure tests (`12-dashboard-gap-closures.md`).
    - ADM-003: banner unit test, wide info-line assertion, admin-paths-fall-through test
      (`13-admin-url-residue.md`).

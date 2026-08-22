@@ -12,6 +12,8 @@ Mock HTTP server: define endpoints as YAML files, watch the directory, hot-reloa
 
 ### Highlights
 
+- **Transparent proxy** — `--proxy /path=https://dest` forwards unmatched requests to a real service, returning the upstream response unchanged. Full-fidelity logging captures every header value (multi-value preserved), the exact outbound request, and the full upstream reply. Raw byte capture at the connection level (`_raw.log`) records traffic even when Go's HTTP parser rejects malformed requests.
+- **Proxy TUI view** — press `2` in the dashboard to see a dedicated proxy view with structured proxy log entries and raw bytes. Press `1` to return to the main dashboard.
 - **Colorized request detail** — `enter` expansion and `i` inspector show cyan labels/keys, yellow request bodies, green response bodies, and JSON syntax highlighting.
 - **Response in the `enter` expansion** — expanding a feed row shows the full response alongside the request: status-tinted `RESPONSE` header, response headers, and a multi-line response body. Unmatched requests show `RESPONSE 404`.
 - **Request/response visual separation** — a muted `─` separator plus full-width background bands (REQUEST dark gray `236`, RESPONSE dark navy `17`) make the two sides instantly distinguishable; response keys are magenta, request keys cyan.
@@ -27,6 +29,7 @@ simuhook [flags]
   --addr :8080          listen address (env PORT)
   --stubs ../stubs      stubs directory (env STUBS_DIR)
   --log-dir logs        log directory (env LOG_DIR)
+  --proxy /path=https://dest  transparent proxy rule (repeatable)
   --tui auto|on|off     dashboard mode: auto = TUI on a TTY, line output otherwise
   --recent N            recent-log ring buffer size (default 50)
   --max-log-body N      cap stored body size for logs/dashboard (0 = unlimited; env LOG_MAX_BODY)
@@ -37,6 +40,7 @@ simuhook [flags]
 
 - **[Matching]({{< relref "/docs/simuhook/stubs/matching" >}})** — method, exact path, glob path, regex path, query, headers, exact payload, and partial-JSON payload matching. Most-specific match wins deterministically.
 - **[Response templates]({{< relref "/docs/simuhook/templates" >}})** — variables, `Header`/`Query`/`RandomInt`/`RandomHex` functions, 27 faker data generators, and JSONPath request-body extraction.
+- **[Proxy]({{< relref "/docs/simuhook/features/proxy" >}})** — transparent forwarding to real services with full-fidelity logging, raw byte capture, and a dedicated TUI view.
 - **[Dashboard]({{< relref "/docs/simuhook/dashboard" >}})** — live dashboard with counts, latency stats (avg/min/max/p95), filterable feed, and per-request expansion and inspector views.
 - **[Logging]({{< relref "/docs/simuhook/features/logging" >}})** — JSON Lines, per-endpoint files, unmatched request capture.
 

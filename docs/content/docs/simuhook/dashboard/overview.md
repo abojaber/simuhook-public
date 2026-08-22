@@ -62,4 +62,5 @@ Color coding (in both views): request keys cyan, response keys magenta, request 
 
 - [Key Bindings]({{< relref "/docs/simuhook/dashboard/key-bindings" >}}) — every key.
 - [Filtering]({{< relref "/docs/simuhook/dashboard/filtering" >}}) — `ep:ping` / `method:POST` / `status:500` / free text.
+- [Proxy]({{< relref "/docs/simuhook/features/proxy" >}}) — transparent forwarding and the proxy view.
 - [Logging]({{< relref "/docs/simuhook/features/logging" >}}) — the same data written to JSON lines.

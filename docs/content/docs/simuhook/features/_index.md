@@ -15,3 +15,4 @@ Beyond plain static responses, Simuhook supports a set of features for simulatin
 | [Response Variants]({{< relref "/docs/simuhook/features/response-variants" >}}) | Multiple responses per stub — weighted or round-robin. |
 | [Delays]({{< relref "/docs/simuhook/features/delays" >}}) | Simulated latency for timeout testing. |
 | [Logging]({{< relref "/docs/simuhook/features/logging" >}}) | JSON line logs for every request. |
+| [Proxy]({{< relref "/docs/simuhook/features/proxy" >}}) | Transparent forwarding to real services with full-fidelity logging. |

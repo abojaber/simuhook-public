@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"simuhook/mock"
+	"github.com/abojaber/simuhook/mock"
 )
 
 // Package-level lipgloss styles.

@@ -28,7 +28,7 @@ Simuhook — a Go CLI tool that simulates incoming webhook requests. Users confi
 
 ## Commands
 
-- Build: `go build -o simuhook ./src`
-- Test: `go test -v -race ./src/...`
-- Run: `cd src && go run .`
+- Build: `go build -o simuhook .`
+- Test: `go test -v -race ./...`
+- Run: `go run .`
 - Lint: no lint command configured

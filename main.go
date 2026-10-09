@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
-	"simuhook/dashboard"
-	"simuhook/mock"
+	"github.com/abojaber/simuhook/dashboard"
+	"github.com/abojaber/simuhook/mock"
 )
 
 // version is the release version, injected at build time via

@@ -1,8 +1,8 @@
 .blackboxcli/
 /simuhook
-src/simuhook
 logs/
 dist/
+coverage.out
 
 # Hugo build output (docs site)
 docs/public/

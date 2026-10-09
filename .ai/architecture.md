@@ -18,7 +18,6 @@ Simuhook is a mock HTTP server written in Go. Users define endpoints as YAML fil
 ## Components
 
 ```
-src/
 ├── main.go               # Entry point: flags, banner, HTTP server, shutdown
 ├── dashboard/            # bubbletea TUI dashboard
 │   ├── dashboard.go      # Run() — program entry (alternate screen)

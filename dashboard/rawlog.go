@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"simuhook/mock"
+	"github.com/abojaber/simuhook/mock"
 )
 
 // RawLogSource provides recent raw log lines for the proxy view.

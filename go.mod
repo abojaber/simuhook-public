@@ -1,4 +1,4 @@
-module simuhook
+module github.com/abojaber/simuhook
 
 go 1.26.4
 

@@ -2,6 +2,21 @@
 
 Completed features and fixes, logged by date.
 
+## 2026-09-21
+
+- **Forgejo integration + documentation + observability planning.** Set up Forgejo as the primary task tracker
+  for the project (https://forgejo.abojaber.com/Projects/simuhook). Created 7 labels and 7 issues (#3–#9):
+  - **Long-term tasks:** #3 TLS support, #4 request recording/replay, #5 multi-server orchestration
+  - **Feature tasks:** #6 async webhook callback (follow-up), #7 sync webhook callback (initial implementation)
+  - **Housekeeping:** #8 observer panic policy (migrated from `.ai/backlog/`), #9 requirements index
+- **Requirements index created** (`.ai/requirements/00-index.md`): single reference mapping all 65 story IDs
+  across 21 requirements files. Includes Forgejo cross-references for active backlog items.
+- **`contracts.md` version pinned**: added `Last reviewed: 2026-09-21 | Schema version: 2 | Covers: PROXY-004, TPL-002`.
+- **Observability hooks design complete** (Forgejo #7): `NewWebhookObserver` + `--webhook-url` flag. Implementation
+  deferred to next session. Async upgrade tracked as #6.
+- **Progress sync established**: `.ai/backlog/observer-panic-policy.md` linked to Forgejo #8. Forgejo is the
+  primary task tracker; `.ai/` docs retain detailed specifications.
+
 ## 2026-08-02
 
 - **UX Phase 4 + space-key fix verified.** Prompt highlight (UXR-006), inline invalid-status error, filter chip (UXR-007) all confirmed live via PTY. Fixed a pre-existing bug where the space key was dropped from the filter prompt (bubbletea sends `KeySpace` for ` `, not `KeyRunes`) — multi-token filters now typeable.

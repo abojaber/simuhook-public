@@ -2,6 +2,28 @@
 
 ## Current Session
 
+### 2026-09-21 — Forgejo integration + documentation + observability planning
+
+- **Forgejo setup.** Created 7 labels (`feature`, `task`, `backlog`, `long-term`, `priority:low/medium/high`)
+  and 7 issues (#3–#9) on https://forgejo.abojaber.com/Projects/simuhook.
+  - **#3** TLS support for HTTPS webhook testing (`long-term`, `priority:low`)
+  - **#4** Request recording/replay — capture real traffic to YAML stubs (`long-term`, `priority:low`)
+  - **#5** Multi-server orchestration — run multiple instances (`long-term`, `priority:low`)
+  - **#6** Observability hooks — async webhook callback delivery (`feature`, `priority:medium`, depends on #7)
+  - **#7** Observability hooks — synchronous webhook callback (initial) (`feature`, `priority:high`)
+  - **#8** Observer panic policy — recover-per-observer (`task`, `backlog`, `priority:low`, migrated from `.ai/backlog/observer-panic-policy.md`)
+  - **#9** Requirements index — story ID to file mapping (`task`, `priority:high`)
+- **Documentation.** Created `.ai/requirements/00-index.md` — single reference mapping all 65 story IDs to
+  their file locations, status, priority, and description. Added Forgejo issue cross-references.
+  Pinned `contracts.md` with a version header (`Last reviewed: 2026-09-21 | Schema version: 2`).
+- **Observability hooks design (#7).** Full implementation plan ready: `NewWebhookObserver(WebhookObserverConfig) func(LogEntry)`
+  in `src/mock/webhook_observer.go`, `--webhook-url` repeatable CLI flag in `main.go`, fire-and-forget
+  synchronous delivery. Zero changes to handler.go — leverages existing observer pattern. Async upgrade (#6)
+  deferred as a follow-up feature task.
+- **Progress sync.** `.ai/backlog/observer-panic-policy.md` updated with Forgejo #8 link. Progress.md and
+  done.md updated with session entry. Forgejo is now the primary task tracker; `.ai/` docs retain detailed
+  specifications.
+
 ### 2026-08-16 — Richer templates (TPL-001/002): faker generators + JSONPath — implemented + verified
 
 - **Stories TPL-001/002 (`[Should]`, verified).** Realistic data generators (27 curated

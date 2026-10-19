@@ -44,6 +44,18 @@ Deferred or uncertain features go in `.ai/backlog/` as individual markdown files
 - Move items out of `backlog/` into session todos when actively implementing.
 - Remove the file if decided against (no "won't do" markers).
 - File naming: `kebab-case-description.md`
+- **Forgejo is the primary task tracker** (https://forgejo.abojaber.com/Projects/simuhook).
+  Backlog items MUST have a corresponding Forgejo issue. Link it with `**Forgejo:** [#N](url)`.
+- Labels: `feature` (new functionality), `task` (housekeeping), `backlog` (deferred), `long-term`
+  (not scheduled), `priority:low/medium/high`.
+
+## Requirements Index Convention
+
+When adding or updating a story in any `.ai/requirements/*.md` file, also update `.ai/requirements/00-index.md`:
+- Add the new row in the correct prefix group (WS, UXR, MAT, TPL, PROXY, ADM, DASH, TGR)
+- Update the summary counts
+- Add Forgejo cross-references for active backlog items
+- Update the `Last updated` date in the header
 
 ## Project-Specific
 

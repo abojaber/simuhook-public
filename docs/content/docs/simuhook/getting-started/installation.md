@@ -32,7 +32,7 @@ Requires [Go 1.21+](https://go.dev/dl/).
 ```bash
 git clone https://github.com/abojaber/simuhook-public
 cd simuhook-public
-go build -o simuhook .
+go build -o simuhook ./cmd/simuhook
 ```
 
 This produces the `simuhook` binary in the current directory.
@@ -49,7 +49,7 @@ Release builds print the release version (e.g. `v0.9.0`).
 ## Install via `go install`
 
 ```bash
-go install github.com/abojaber/simuhook-public@v0.9.0
+go install github.com/abojaber/simuhook-public/cmd/simuhook@v0.9.2
 ```
 
 This installs the `simuhook` binary into your `GOBIN` (default `~/go/bin`). Make sure `GOBIN` is on your `PATH`.

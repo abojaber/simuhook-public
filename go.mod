@@ -1,4 +1,4 @@
-module github.com/abojaber/simuhook
+module github.com/abojaber/simuhook-public
 
 go 1.26.4
 

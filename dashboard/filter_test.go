@@ -3,7 +3,7 @@ package dashboard
 import (
 	"testing"
 
-	"github.com/abojaber/simuhook/mock"
+	"github.com/abojaber/simuhook-public/mock"
 )
 
 func TestFilter_EmptyMatchesAll(t *testing.T) {

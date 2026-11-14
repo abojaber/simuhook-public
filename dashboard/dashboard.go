@@ -3,7 +3,7 @@ package dashboard
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/abojaber/simuhook/mock"
+	"github.com/abojaber/simuhook-public/mock"
 )
 
 // Config carries static server settings shown in the dashboard header.

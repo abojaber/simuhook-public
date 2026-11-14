@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/abojaber/simuhook/mock"
+	"github.com/abojaber/simuhook-public/mock"
 )
 
 // StatsSource is the interface for reading dashboard statistics.

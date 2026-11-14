@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/abojaber/simuhook/mock"
+	"github.com/abojaber/simuhook-public/mock"
 )
 
 // fakeSource is a stub StatsSource for testing.

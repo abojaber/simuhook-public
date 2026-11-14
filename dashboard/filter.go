@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/abojaber/simuhook/mock"
+	"github.com/abojaber/simuhook-public/mock"
 )
 
 // Filter selects which recent log entries to display. The zero value matches

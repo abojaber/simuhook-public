@@ -30,8 +30,8 @@ mv simuhook-darwin-arm64 /usr/local/bin/simuhook
 Requires [Go 1.21+](https://go.dev/dl/).
 
 ```bash
-git clone https://github.com/abojaber/simuhook
-cd simuhook
+git clone https://github.com/abojaber/simuhook-public
+cd simuhook-public
 go build -o simuhook .
 ```
 
@@ -49,7 +49,7 @@ Release builds print the release version (e.g. `v0.9.0`).
 ## Install via `go install`
 
 ```bash
-go install github.com/abojaber/simuhook@v0.9.0
+go install github.com/abojaber/simuhook-public@v0.9.0
 ```
 
 This installs the `simuhook` binary into your `GOBIN` (default `~/go/bin`). Make sure `GOBIN` is on your `PATH`.

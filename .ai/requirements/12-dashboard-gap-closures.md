@@ -186,7 +186,7 @@ AC1 — 10-admin-and-dashboard-features.md (DASH-001 notes) documents that the c
 
 ## DASH-006 — Observer panic policy `[Could]`
 
-**Status:** `backlog` | **Corresponds to:** decision D6
+**Status:** `backlog` | **Forgejo:** [#8](https://forgejo.abojaber.com/Projects/simuhook/issues/8) | **Corresponds to:** decision D6
 
 **User Story:**
 > As an operator, I want request handling to be robust against an observer panicking, so

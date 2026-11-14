@@ -2,6 +2,67 @@
 
 ## Current Session
 
+### 2026-10-19 — Requirements analysis + bookkeeping + proxy QA verification
+
+- **Folder analysis (BA).** Full repo review surfaced status/bookkeeping drift (below) and
+  confirmed the product itself is healthy: ~20k LOC Go, 562 tests green under `-race`, vet +
+  gofmt + build clean, `v0.1.0` tagged.
+- **Index recount + drift fixes (`00-index.md`).** The "Summary by Status" table summed to 61
+  against a real 65 stories — recounted from table rows and corrected (done 28, verified 26,
+  in-progress 1, backlog 3, draft 3, wont-do 2, removed 2). Dropped the phantom `ready: 6`
+  row (no story is in `ready` status). Date bumped to 2026-10-19.
+- **Stale story statuses corrected.**
+  - **UXR-013** `draft` → `done` — already implemented as WS-018 + DASH-004 (the "nice format"
+    work also landed as UXR-015/016/017); closed as superseded in `08-dashboard-inspect.md` §7.
+  - **UXR-012** `draft` → `backlog` — decisions 1–3 signed off but never implemented; matches
+    how `plan.md` already treats it.
+- **Forgejo convention gap flagged (not fixable in-env).** WS-014/ADM-001 and UXR-012 are
+  `backlog` items with no Forgejo issue, violating `.ai/rules.md` (every backlog item needs an
+  issue). No Forgejo CLI/tea available — documented in the index with suggested labels for the
+  stakeholder to create manually. Noted that **#9** (the index task) is delivered and can close.
+- **PROXY-001..004 QA verification (subagent QA).** Ran the full AC pass against
+  `20-proxy-forwarding.md` — automated suite (562 PASS/0 FAIL under `-race`, vet/gofmt/build
+  clean on toolchain `go1.26.9`) + live end-to-end smoke (real python upstream, dead-port
+  failure, malformed raw request, 100 KB body, HTTPS destination) + scripted-pty TUI probe.
+  - **PROXY-002, PROXY-003, PROXY-004 → `verified`.** All ACs pass; fidelity logging, raw tee,
+    and proxy TUI view all confirmed live.
+  - **PROXY-001 → held at `in-progress`.** AC2 fails: **Bug 1 (High)** — repeated upstream
+    response headers (multiple `Set-Cookie`, `Vary`, …) are collapsed to the first value in the
+    caller-visible response. Root cause `handler.go` replays from `firstValues(resp.Header)` via
+    `w.Header().Set`; the legacy-log shape (D3) must not drive the response write. Fix = write the
+    full multi-value `resp.Header` with `Add`/direct assignment + a caller-visible regression test.
+    **Bug 2 (Medium)** — hop-by-hop *response* headers forwarded to caller (request leg strips
+    correctly; RFC 7230 §6.1 response side missing) — cheap same-block follow-up. Bugs 3/4 Low.
+  - **Report written:** `.ai/qa/20-proxy-forwarding-report.md`. Stories updated in
+    `20-proxy-forwarding.md` (statuses + new §5 QA section) and `00-index.md`.
+- **`plan.md` updated.** Proxy QA milestone checked; Active Priority now leads with the GitHub
+  release, closing Forgejo #9, and fixing PROXY-001 Bug 1 (blocks sign-off), plus the missing
+  Forgejo issues and non-blocking test gaps.
+- **Awaiting stakeholder decision:** whether to fix PROXY-001 Bug 1 (+ Bug 2) now via the
+  Developer, and whether to create the missing Forgejo issues.
+
+### 2026-09-21 — Forgejo integration + documentation + observability planning
+
+- **Forgejo setup.** Created 7 labels (`feature`, `task`, `backlog`, `long-term`, `priority:low/medium/high`)
+  and 7 issues (#3–#9) on https://forgejo.abojaber.com/Projects/simuhook.
+  - **#3** TLS support for HTTPS webhook testing (`long-term`, `priority:low`)
+  - **#4** Request recording/replay — capture real traffic to YAML stubs (`long-term`, `priority:low`)
+  - **#5** Multi-server orchestration — run multiple instances (`long-term`, `priority:low`)
+  - **#6** Observability hooks — async webhook callback delivery (`feature`, `priority:medium`, depends on #7)
+  - **#7** Observability hooks — synchronous webhook callback (initial) (`feature`, `priority:high`)
+  - **#8** Observer panic policy — recover-per-observer (`task`, `backlog`, `priority:low`, migrated from `.ai/backlog/observer-panic-policy.md`)
+  - **#9** Requirements index — story ID to file mapping (`task`, `priority:high`)
+- **Documentation.** Created `.ai/requirements/00-index.md` — single reference mapping all 65 story IDs to
+  their file locations, status, priority, and description. Added Forgejo issue cross-references.
+  Pinned `contracts.md` with a version header (`Last reviewed: 2026-09-21 | Schema version: 2`).
+- **Observability hooks design (#7).** Full implementation plan ready: `NewWebhookObserver(WebhookObserverConfig) func(LogEntry)`
+  in `src/mock/webhook_observer.go`, `--webhook-url` repeatable CLI flag in `main.go`, fire-and-forget
+  synchronous delivery. Zero changes to handler.go — leverages existing observer pattern. Async upgrade (#6)
+  deferred as a follow-up feature task.
+- **Progress sync.** `.ai/backlog/observer-panic-policy.md` updated with Forgejo #8 link. Progress.md and
+  done.md updated with session entry. Forgejo is now the primary task tracker; `.ai/` docs retain detailed
+  specifications.
+
 ### 2026-08-16 — Richer templates (TPL-001/002): faker generators + JSONPath — implemented + verified
 
 - **Stories TPL-001/002 (`[Should]`, verified).** Realistic data generators (27 curated

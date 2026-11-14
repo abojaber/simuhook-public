@@ -2,6 +2,8 @@
 
 > API contracts, data schemas, payload formats.
 
+**Last reviewed:** 2026-09-21 | **Schema version:** 2 | **Covers:** PROXY-004, TPL-002
+
 ---
 
 ## Configuration Schema (YAML per-file stubs)

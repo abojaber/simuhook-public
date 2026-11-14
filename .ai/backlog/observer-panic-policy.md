@@ -4,6 +4,8 @@
 
 **Status:** backlog (from DASH-001 gap analysis, decision D6 — stakeholder agreed 2026-08-05)
 
+**Forgejo:** [#8](https://forgejo.abojaber.com/Projects/simuhook/issues/8)
+
 **Priority:** low (`[Could]`)
 
 ## Description

@@ -1,6 +1,6 @@
 # UXR-012 & UXR-013 — Endpoint-select filter + request/response inspector
 
-Requirement file owner: BA. Status: `draft`. Phase: ux-vnext.
+Requirement file owner: BA. Status: UXR-013 `done` (superseded by WS-018/DASH-004), UXR-012 `backlog`. Phase: ux-vnext.
 
 ## 0. Stakeholder feature requests (2026-08-03)
 
@@ -49,7 +49,7 @@ No multi-endpoint filtering (single endpoint). No change to the typed `ep:` prom
 
 ---
 
-### UXR-013 — Select a request and inspect full request + response in a nice format `[Should]`
+### UXR-013 — Select a request and inspect full request + response in a nice format `[Should]` — **done, superseded by WS-018 + DASH-004**
 
 **As a** Simuhook operator on the dashboard,
 **I want** to select one request in the live stream and see its full request AND its full
@@ -131,3 +131,13 @@ inside the detail). No body size cap discussion yet — see open question.
 - 2026-08-03: stakeholder signed off all 7 decisions (`yes to all`).
 - 2026-08-03: WS-018 design (Architect) reviewed; Backlog items spinned out to `.ai/backlog/` (max-log-body-cap, response-variant-index, detaillines-header-cap, viewport-g-g-bindings) — commit `2973eb3`.
 - UXR-013 / **WS-018 design APPROVED → handed to Developer** (`[Should]`). UXR-012 waits for phase 2.
+- **UXR-013 CLOSED → superseded.** Implemented as **WS-018** (inspector data model:
+  `LogEntry.ResponseHeaders`/`ResponseBody`, additive/backward-compatible) + **DASH-004**
+  (standalone `i` inspector on the selected row), both QA-verified (see `done.md` 2026-08-06
+  and `12-dashboard-gap-closures.md`). The "nice format" requirements (pretty-printed JSON,
+  status tint, section split, body cap) were later delivered by UXR-015/016/017 (colorized
+  detail, RESPONSE section, background bands). No further work on UXR-013.
+- **UXR-012 MOVED to backlog.** Endpoint-select filter — decisions 1–3 signed off
+  (`enter` sets, `esc` clears, `ep` predicate replace, `▸` marker), but never implemented;
+  parked as a `backlog` `[Should]` pending a UX follow-up stakeholder request. Not in
+  current active scope.

@@ -47,6 +47,7 @@ simuhook [flags]
 - `simuhook-darwin-amd64` (Intel Mac)
 - `simuhook-linux-arm64`
 - `simuhook-linux-amd64`
+- `simuhook-windows-amd64.exe`
 
 See [Installation]({{< relref "/docs/simuhook/getting-started/installation" >}}) for download and setup.
 

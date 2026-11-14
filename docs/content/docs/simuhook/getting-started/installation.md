@@ -16,6 +16,7 @@ Pre-built binaries are available for the following platforms:
 | macOS | Intel (amd64) |
 | Linux | arm64 |
 | Linux | amd64 |
+| Windows | amd64 |
 
 Download the binary for your platform, extract it, make it executable, and move it somewhere on your `PATH`:
 
@@ -31,7 +32,7 @@ Requires [Go 1.21+](https://go.dev/dl/).
 ```bash
 git clone https://github.com/abojaber/simuhook
 cd simuhook
-go build -o simuhook ./src
+go build -o simuhook .
 ```
 
 This produces the `simuhook` binary in the current directory.
@@ -43,8 +44,12 @@ simuhook --version
 # → dev (development build)
 ```
 
-Release builds print the release version (e.g. `v0.1.0`).
+Release builds print the release version (e.g. `v0.9.0`).
 
-## Future: `go install`
+## Install via `go install`
 
-A `go install` package will be available once Simuhook is published and released.
+```bash
+go install github.com/abojaber/simuhook@v0.9.0
+```
+
+This installs the `simuhook` binary into your `GOBIN` (default `~/go/bin`). Make sure `GOBIN` is on your `PATH`.

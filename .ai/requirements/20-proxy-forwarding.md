@@ -6,7 +6,7 @@
 > destination URL, both legs of the traffic are logged with full fidelity, and
 > the upstream response is returned unchanged to the caller.
 
-**Status:** `in-progress` | **Owner:** BA | **Date:** 2026-08-19 | **Goal:** debug real integrations without a real service
+**Status:** `in-progress` (PROXY-002/003/004 verified 2026-10-19; PROXY-001 blocked on Bug 1) | **Owner:** BA | **Date:** 2026-08-19 | **Goal:** debug real integrations without a real service
 
 **Stakeholder decisions (signed off 2026-08-19):**
 1. **D1 = A — path preserved as-is.** The proxy treats the destination as a base URL (scheme + host) and carries the caller's full original path + query over verbatim. No prefix stripping, no rewrite.
@@ -18,7 +18,7 @@
 
 ## PROXY-001 — Transparent forwarding fallback `[Should]`
 
-**Status:** `ready`
+**Status:** `in-progress` (implemented; QA-verified 2026-10-19 EXCEPT AC2 — Bug 1, see §5)
 
 **Story:**
 > As a developer testing my integration against a mocked client, I want requests that match no stub to be forwarded to a real destination URL, so that I can see how my service behaves against a live third-party API — while still capturing all traffic for debugging.
@@ -48,7 +48,7 @@ Then  the stub wins (registry match precedes proxy fallback)
 
 ## PROXY-002 — Full-fidelity logging `[Should]`
 
-**Status:** `ready`
+**Status:** `verified` (QA 2026-10-19: 8/8 fidelity ACs + failure path + stub-absence all PASS)
 
 **Story:**
 > As a developer debugging a failed integration, I want the proxy to log the traffic "exactly as-is" — every header value (even multi-value or unusual ones) and the raw body (even invalid JSON) — plus the exact request/response exchanged between the proxy and the target endpoint, so that I can reproduce and reason about the failure from the log alone.
@@ -111,7 +111,7 @@ Then  raw_headers, upstream_request, and upstream_response are all absent
 
 ## PROXY-003 — Raw listener-level tee for malformed requests `[Should]`
 
-**Status:** `ready` | **Decisions locked 2026-08-19, revised 2026-08-21 (D5 expanded, Q1–Q3 resolved)**
+**Status:** `verified` (QA 2026-10-19: all ACs PASS live, incl. malformed-request capture, no-`--proxy` identity, 8 KB/64 KB edges) | **Decisions locked 2026-08-19, revised 2026-08-21 (D5 expanded, Q1–Q3 resolved)**
 
 **Story:**
 > As a developer debugging a broken integration, I want the raw bytes of proxy-bound requests AND responses captured verbatim — including requests Go's HTTP parser rejects (e.g. a header line with no colon) — so that I can see exactly what a buggy client sent and what the server replied, even when the request never reaches the handler.
@@ -177,7 +177,7 @@ Then  _raw.log stores the first 64 KB (request + response combined), then stops 
 
 ## PROXY-004 — Proxy TUI view with structured log entries `[Should]`
 
-**Status:** `ready`
+**Status:** `verified` (QA 2026-10-19: all ACs PASS — unit + scripted pty)
 
 **Story:**
 > As a developer debugging a proxied integration, I want a dedicated proxy view in the TUI dashboard that shows all proxy requests as structured log entries (like the main feed but filtered to proxy traffic only), so that I can monitor proxy activity separately from stub traffic and see both structured entries and raw bytes in one place.
@@ -214,6 +214,27 @@ Then  it shows "(no proxy requests yet)" placeholder text
 ```
 
 **Tests:** `TestProxyView_StructuredEntries`, `TestProxyView_NoProxyEntries`, `TestProxyView_FiltersOnlyProxyWebhook`, `TestProxyView_NilSourceWithProxyLogs`, `TestProxyView_RawBytesSection`, `TestProxyEntries_Empty`, `TestProxyEntries_Mixed`.
+
+---
+
+## 5. QA verification (2026-10-19)
+
+Full report: `.ai/qa/20-proxy-forwarding-report.md`. Automated suite: 562 tests PASS / 0 FAIL under `-race`, vet + gofmt + build clean (QA toolchain `go1.26.9`). Live end-to-end smoke (real upstream, dead-port failure, malformed raw request, 100 KB body, HTTPS destination, scripted-pty TUI probe).
+
+**Verdicts:** PROXY-002 `verified`, PROXY-003 `verified`, PROXY-004 `verified`. **PROXY-001 NOT verified** — AC2 (upstream response returned unchanged) fails.
+
+**Open defects (stakeholder decision pending):**
+
+| Bug | Severity | Summary | Story impact |
+|-----|----------|---------|--------------|
+| 1 | **High** | Repeated upstream response headers (e.g. multiple `Set-Cookie`) collapsed to first value in the caller-visible response — `handler.go` replays from `firstValues(resp.Header)` via `w.Header().Set`; the legacy-log shape (D3) must not drive the response write | fails PROXY-001 AC2 |
+| 2 | Medium | Hop-by-hop *response* headers (`Connection`, `Keep-Alive`, `Trailer`, `Upgrade`) forwarded to the caller — request leg strips correctly, response leg doesn't (RFC 7230 §6.1) | spec/hygiene gap, same code block as Bug 1 |
+| 3 | Low | Raw-tee 64 KB cap doesn't debit request-line bytes (observed 65,559 B) | doc/behavior drift, capture cap never affects served bytes |
+| 4 | Low (cosmetic) | Proxy view body can be blank up to 1 s after pressing `2` (content rebuilt only on the 1 s tick) | code-derived, not empirically confirmed |
+
+**Non-blocking coverage gaps:** no caller-visible multi-value response-header regression test (root cause of Bug 1); no response-side hop-by-hop test; PROXY-004 AC2 fields not asserted in CI; no chunked/streaming, timeout/DNS/TLS-failure, or concurrency tests; `TestRawTeeListener_NoProxy_NoWrap` doesn't exercise the `main.go` guard.
+
+**Doc drift:** this file + `architecture.md` say PROXY-003 ships "12 tests" — `rawtee_test.go` actually has 24 (more coverage than documented; correct on next edit).
 
 ---
 

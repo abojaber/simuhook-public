@@ -2,21 +2,23 @@
 
 > Single reference for all story IDs across the 21 requirements files.
 >
-> **Last updated:** 2026-09-21 | **Total stories:** 65 | **Forgejo:** https://forgejo.abojaber.com/Projects/simuhook
+> **Last updated:** 2026-10-19 | **Total stories:** 65 | **Forgejo:** https://forgejo.abojaber.com/Projects/simuhook
 
 ---
 
 ## Summary by Status
 
+> Recounted from table rows 2026-10-19 (the previous summary was stale — it summed to 61, not 65).
+
 | Status | Count |
 |--------|-------|
-| done / verified | 38 |
-| in-progress | 4 |
-| ready | 6 |
-| backlog | 2 |
-| draft | 6 |
+| done | 28 |
+| verified | 26 |
+| in-progress | 1 |
+| backlog | 3 |
+| draft | 3 |
 | wont-do | 2 |
-| removed | 3 |
+| removed | 2 |
 
 ## Summary by Prefix
 
@@ -52,7 +54,7 @@
 | WS-010c | `04-backlog.md` | done | — | Log feed filtering and scrolling (Filter type, sticky-bottom viewport, key map) |
 | WS-012 | `04-backlog.md` | draft | [Could] | WebSocket / SSE endpoint simulation |
 | WS-013 | `04-backlog.md` | draft | [Won't] | Built-in webhook templates (Stripe, GitHub, Slack) — rejected, custom-only |
-| WS-014 | `04-backlog.md` | backlog | [Could] | REST API to manage config at runtime (consolidated with ADM-001; removed 2026-08-05) — [Forgejo: n/a, see ADM-001] |
+| WS-014 | `04-backlog.md` | backlog | [Could] | REST API to manage config at runtime (consolidated with ADM-001; removed 2026-08-05) — ⚠️ needs Forgejo issue (see ADM-001) |
 | WS-015 | `02-mvp.md` | done | [Must] | Echo mode: return request payload as response |
 | WS-016 | `03-v1.md` | done | [Should] | CLI dashboard with startup banner and per-request log line |
 | WS-017 | `04-backlog.md` | done | [Could] | Single source of truth for request-handling path (extract `mock.NewHandler`) |
@@ -74,8 +76,8 @@
 | UXR-009 | `06-dashboard-redesign.md` | verified | [Should] | Two-column dashboard layout (40/60 endpoints/stream split) |
 | UXR-010 | `06-dashboard-redesign.md` | verified | [Should] | Pause Stream button in title bar (visual `L` affordance) |
 | UXR-011 | `06-dashboard-redesign.md` | verified | [Should] | Stream + endpoints table format (columnar Time/Method/Path/Stub/Status) |
-| UXR-012 | `08-dashboard-inspect.md` | draft | [Should] | Select a registered endpoint to filter the live request stream |
-| UXR-013 | `08-dashboard-inspect.md` | draft | [Should] | Select a request and inspect full request + response (implemented as WS-018) |
+| UXR-012 | `08-dashboard-inspect.md` | backlog | [Should] | Select a registered endpoint to filter the live request stream (decisions signed off, never implemented) |
+| UXR-013 | `08-dashboard-inspect.md` | done | [Should] | Select a request and inspect full request + response (superseded by WS-018 + DASH-004) |
 | UXR-014 | `09-feed-selection-bug.md` | verified | [Should] | Feed selection stuck on first entry when content fits viewport (superseded by UXR-018) |
 | UXR-015 | `14-detail-coloring.md` | verified | [Should] | Colorized request detail (keys/values + request/response body + JSON syntax highlighting) |
 | UXR-016 | `15-detail-response.md` | verified | [Should] | Response section in the `enter` request detail |
@@ -104,10 +106,10 @@
 
 | ID | File | Status | Priority | Description |
 |----|------|--------|----------|-------------|
-| PROXY-001 | `20-proxy-forwarding.md` | in-progress | [Should] | Transparent forwarding fallback (`--proxy /path=https://destination`, longest-prefix wins) |
-| PROXY-002 | `20-proxy-forwarding.md` | in-progress | [Should] | Full-fidelity logging (raw_headers, upstream_request, upstream_response) |
-| PROXY-003 | `20-proxy-forwarding.md` | in-progress | [Should] | Raw listener-level tee for malformed requests (`RawTeeListener`, `_raw.log`) |
-| PROXY-004 | `20-proxy-forwarding.md` | in-progress | [Should] | Proxy TUI view with structured log entries (dedicated proxy view, key `2`) |
+| PROXY-001 | `20-proxy-forwarding.md` | in-progress | [Should] | Transparent forwarding fallback (`--proxy /path=https://destination`, longest-prefix wins) — ⚠️ QA blocked: Bug 1 (High) fails AC2 |
+| PROXY-002 | `20-proxy-forwarding.md` | verified | [Should] | Full-fidelity logging (raw_headers, upstream_request, upstream_response) |
+| PROXY-003 | `20-proxy-forwarding.md` | verified | [Should] | Raw listener-level tee for malformed requests (`RawTeeListener`, `_raw.log`) |
+| PROXY-004 | `20-proxy-forwarding.md` | verified | [Should] | Proxy TUI view with structured log entries (dedicated proxy view, key `2`) |
 
 ## ADM — Admin API (removed)
 
@@ -150,4 +152,11 @@
 | [#6](https://forgejo.abojaber.com/Projects/simuhook/issues/6) | Observability hooks — async webhook callback delivery | `feature`, `priority:medium` | open |
 | [#7](https://forgejo.abojaber.com/Projects/simuhook/issues/7) | Observability hooks — synchronous webhook callback (initial) | `feature`, `priority:high` | open |
 | [#8](https://forgejo.abojaber.com/Projects/simuhook/issues/8) | Observer panic policy — recover-per-observer | `task`, `backlog`, `priority:low` | open |
-| [#9](https://forgejo.abojaber.com/Projects/simuhook/issues/9) | Requirements index — story ID to file mapping | `task`, `priority:high` | open |
+| [#9](https://forgejo.abojaber.com/Projects/simuhook/issues/9) | Requirements index — story ID to file mapping | `task`, `priority:high` | open (✅ delivered — `00-index.md` created; issue can be closed) |
+
+**⚠️ Convention gap (2026-10-19):** three `backlog` stories have no Forgejo issue, violating
+the backlog convention (`.ai/rules.md`: every backlog item must have a corresponding issue).
+No Forgejo CLI is available in this environment to create them — the stakeholder must add:
+- **WS-014 / ADM-001** — admin REST API reintroduction (suggested labels: `feature`, `backlog`, `priority:low`).
+- **UXR-012** — endpoint-select filter (suggested labels: `feature`, `backlog`, `priority:medium`).
+- **WS-012** — WebSocket / SSE endpoint simulation (still `draft`; promote to backlog + issue when scoped).

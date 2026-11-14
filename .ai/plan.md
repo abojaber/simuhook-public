@@ -28,17 +28,30 @@
       structured proxy log entries (filtered from StatsTracker where webhook == "_proxy")
       plus raw bytes from the tee ring buffer; key `2` switches to proxy view, `1` returns
       to main dashboard; implemented 2026-08-21.
+- [x] **Proxy QA verification pass (PROXY-002/003/004)** — subagent QA verified full-fidelity
+      logging, raw tee, and proxy TUI view 2026-10-19 (562 tests PASS under `-race`, live
+      end-to-end smoke + scripted-pty TUI probe). PROXY-001 held at `in-progress` — see Active
+      Priority #4 (Bug 1).
 
 ## Active Priority
 
 1. **Publish the GitHub release** — `gh auth login` then
    `gh release create v0.1.0 --title "Simuhook v0.1.0" --notes-file dist/RELEASE_NOTES.md
    dist/simuhook-* dist/CHECKSUMS.txt` (binaries + notes + checksums ready in `dist/`).
-2. **Non-blocking QA test gaps (small, low-effort):**
+2. **Close Forgejo #9** — the requirements index it asked for is delivered (`.ai/requirements/00-index.md`).
+3. **Fix PROXY-001 Bug 1 (High) — collapsed multi-value response headers.** `handler.go` replays
+   the upstream response from `firstValues(resp.Header)` via `w.Header().Set`; must write the full
+   multi-value `resp.Header` with `Add`/direct assignment. Add a caller-visible multi-value
+   regression test. Blocks PROXY-001 sign-off. (Bug 2 — response-side hop-by-hop stripping — is a
+   cheap same-block follow-up.) Report: `.ai/qa/20-proxy-forwarding-report.md`.
+4. **Create missing Forgejo issues** for backlog items (no CLI available in-env — manual):
+   WS-014/ADM-001, UXR-012, and (when scoped) WS-012.
+5. **Non-blocking QA test gaps (small, low-effort):**
    - D2 AC3/AC4: pin TZ=UTC byte-identical + `??:??:??` parse-failure tests (`12-dashboard-gap-closures.md`).
-   - ADM-003: banner unit test, wide info-line assertion, admin-paths-fall-through test
-     (`13-admin-url-residue.md`).
-3. **DASH-006 policy confirmation** — observer panic policy (`.ai/backlog/observer-panic-policy.md`):
+   - ADM-003: banner unit test, wide info-line assertion, admin-paths-fall-through test (`13-admin-url-residue.md`).
+   - Proxy coverage gaps: PROXY-004 AC2 field asserts, response-side hop-by-hop test,
+     `TestRawTeeListener_NoProxy_NoWrap` main.go-guard test.
+6. **DASH-006 policy confirmation** — observer panic policy (`.ai/backlog/observer-panic-policy.md`):
    confirm direction 1 (per-observer recover) when picked up.
 
 ## Backlog

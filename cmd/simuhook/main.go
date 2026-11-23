@@ -27,7 +27,7 @@ var version = "dev"
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	stubsDir := flag.String("stubs", "../stubs", "stubs directory")
+	stubsDir := flag.String("stubs", "stubs", "stubs directory")
 	logDir := flag.String("log-dir", "logs", "log directory")
 	tui := flag.String("tui", "auto", "dashboard mode: auto|on|off")
 	recent := flag.Int("recent", 50, "recent log ring buffer size")
@@ -94,6 +94,10 @@ func main() {
 	}
 
 	registry := mock.NewRegistry()
+
+	if err := os.MkdirAll(*stubsDir, 0o755); err != nil {
+		log.Fatalf("stubs dir: %v", err)
+	}
 
 	watcher, err := mock.NewWatcher(*stubsDir, registry)
 	if err != nil {
